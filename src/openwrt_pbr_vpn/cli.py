@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import diagnose, keys, openvpn, routes, wireguard
+from . import diagnose, doctor, keys, openvpn, routes, wireguard
 from .config import Config, load_config
 from .output import emit_result, setup_logging
 from .router import Router
@@ -156,6 +156,12 @@ def cmd_killswitch_on(args) -> tuple[dict, str]:
     return result, "✓ strict_enforcement=1"
 
 
+def cmd_doctor(args) -> tuple[dict, str]:
+    cfg = _load(args)
+    report = doctor.run(cfg)
+    return report.to_dict(), doctor.format_human(report)
+
+
 def cmd_keys_install(args) -> tuple[dict, str]:
     cfg = _load(args)
     path = Path(args.path) if args.path else keys.DEFAULT_KEY_PATH
@@ -233,6 +239,9 @@ def build_parser() -> argparse.ArgumentParser:
     a.set_defaults(func=cmd_ovpn_probe)
 
     sub.add_parser("diagnose", help="Print health/state").set_defaults(func=cmd_diagnose)
+    sub.add_parser("doctor", help="Self-check: run a battery of audits with fix hints").set_defaults(
+        func=cmd_doctor
+    )
     sub.add_parser("emergency-off", help="Disable kill-switch and stop VPN (raw WAN)").set_defaults(
         func=cmd_emergency_off
     )
