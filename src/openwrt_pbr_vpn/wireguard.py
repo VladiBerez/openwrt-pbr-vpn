@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Config
+from .output import get_logger
 from .router import Router
+
+log = get_logger("wireguard")
 
 
 @dataclass
@@ -132,7 +135,7 @@ def probe(
     sending some test traffic. This catches the "tunnel up, RX=0" DPI case.
     """
     for name, peer in peers:
-        print(f"\n--- probing {name} ({peer.endpoint_host}:{peer.endpoint_port}) ---")
+        log.info(f"\n--- probing {name} ({peer.endpoint_host}:{peer.endpoint_port}) ---")
         apply(r, cfg, peer)
         time.sleep(4)
 
@@ -146,11 +149,11 @@ def probe(
                 time.sleep(1)
             time.sleep(2)
             rx, tx = transfer_counters(r, cfg)
-            print(f"  rx={rx} tx={tx} bytes")
+            log.info(f"  rx={rx} tx={tx} bytes")
             if rx > rx_threshold:
-                print(f"  *** {name} WORKS — data channel alive ***")
+                log.info(f"  *** {name} WORKS — data channel alive ***")
                 return name, peer
-            print(f"  {name} dead (no reply traffic)")
+            log.info(f"  {name} dead (no reply traffic)")
         finally:
             r.run(f"ip route del 1.1.1.1/32 dev {cfg.vpn_interface} 2>/dev/null || true")
     return None

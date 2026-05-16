@@ -12,7 +12,10 @@ import time
 from pathlib import Path
 
 from .config import Config
+from .output import get_logger
 from .router import Router
+
+log = get_logger("openvpn")
 
 SPLIT_TUNNEL_BLOCK = """
 # === split-tunnel additions (managed by openwrt-pbr-vpn) ===
@@ -108,20 +111,20 @@ def probe(
     AND can ping out (via `ip route add 1.1.1.1 dev tun0`).
     """
     for name, path in profiles:
-        print(f"\n--- probing OpenVPN {name} ({path.name}) ---")
+        log.info(f"\n--- probing OpenVPN {name} ({path.name}) ---")
         text = patch_for_split_tunnel(path.read_text(encoding="utf-8"))
         install(r, cfg, name, text, patch=False)
         restart(r)
         if not wait_for_tun(r, timeout=handshake_timeout):
-            print(f"  {name}: tun0 never came up")
+            log.info(f"  {name}: tun0 never came up")
             continue
         r.run("ip route add 1.1.1.1/32 dev tun0 2>/dev/null || true")
         try:
             res = r.run("ping -c 3 -W 3 1.1.1.1 | tail -1")
             if "0 received" in res.stdout or "0 packets received" in res.stdout:
-                print(f"  {name}: tun0 up but data channel dead")
+                log.info(f"  {name}: tun0 up but data channel dead")
                 continue
-            print(f"  *** {name} WORKS ***")
+            log.info(f"  *** {name} WORKS ***")
             return name, path
         finally:
             r.run("ip route del 1.1.1.1/32 dev tun0 2>/dev/null || true")

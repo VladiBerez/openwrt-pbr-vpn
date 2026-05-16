@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
-import sys
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from .output import get_logger
+
+log = get_logger("doh")
 
 DEFAULT_RESOLVERS: tuple[str, ...] = (
     "https://dns.google/resolve",
@@ -27,7 +30,7 @@ def resolve_a(domain: str, resolvers: tuple[str, ...] = DEFAULT_RESOLVERS, timeo
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 data = json.loads(r.read())
         except Exception as e:
-            print(f"  ! {domain} via {base}: {e}", file=sys.stderr)
+            log.warning("  ! %s via %s: %s", domain, base, e)
             continue
         for ans in data.get("Answer") or []:
             if ans.get("type") == 1:
@@ -50,7 +53,7 @@ def resolve_many(
             ips = fut.result()
             result[d] = ips
             if progress:
-                print(f"  [{i}/{len(domains)}] {d}: {len(ips)} IP")
+                log.info("  [%d/%d] %s: %d IP", i, len(domains), d, len(ips))
     return result
 
 
