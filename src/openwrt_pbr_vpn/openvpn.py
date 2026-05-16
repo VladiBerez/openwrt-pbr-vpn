@@ -6,6 +6,7 @@ The router runs the standard `openvpn` service. Each profile lives at
 For split-tunnel with PBR we patch each profile so it doesn't pull a
 default route or DNS from the server — see `patch_for_split_tunnel`.
 """
+
 from __future__ import annotations
 
 import time
@@ -65,7 +66,9 @@ def install(r: Router, cfg: Config, name: str, conf_text: str, *, patch: bool = 
     r.upload_bytes(conf_text.encode("utf-8"), remote_path, mode=0o600)
 
     # List current configs and disable them all
-    existing = r.run("uci show openvpn | grep '=openvpn$' | cut -d. -f2 | cut -d= -f1").stdout.split()
+    existing = r.run(
+        "uci show openvpn | grep '=openvpn$' | cut -d. -f2 | cut -d= -f1"
+    ).stdout.split()
     for old in existing:
         r.uci_set(f"openvpn.{old}.enabled", "0")
 

@@ -1,8 +1,8 @@
 """SSH key management and OS-keyring password storage."""
+
 from __future__ import annotations
 
 import getpass
-import subprocess
 from pathlib import Path
 
 import paramiko
@@ -67,7 +67,9 @@ def install_key(cfg: Config, key_path: Path = DEFAULT_KEY_PATH) -> None:
             err = stderr.read().decode(errors="ignore")
             raise RuntimeError(f"Failed to install key (rc={rc}): {err}")
         log.info("✓ Installed public key on %s", cfg.host)
-        log.info("  Set ROUTER_SSH_KEY=%s in your .env and you can clear ROUTER_PASSWORD.", key_path)
+        log.info(
+            "  Set ROUTER_SSH_KEY=%s in your .env and you can clear ROUTER_PASSWORD.", key_path
+        )
     finally:
         c.close()
 
@@ -87,6 +89,7 @@ def keyring_test(cfg: Config) -> None:
     """Try authenticating with currently-configured credentials."""
     try:
         from .router import Router
+
         with Router(cfg) as r:
             out = r.run("uname -a").stdout.strip()
         log.info("✓ Authenticated to %s: %s", cfg.host, out)

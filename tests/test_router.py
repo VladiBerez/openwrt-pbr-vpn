@@ -1,4 +1,5 @@
 """Tests for the paramiko wrapper. The SSH session itself is mocked."""
+
 from __future__ import annotations
 
 from unittest import mock
@@ -42,7 +43,7 @@ def _patch_paramiko(monkeypatch, exec_side_effect):
 
 def test_run_returns_stdout_and_rc(monkeypatch, cfg):
     chans = _make_channel(rc=0, stdout=b"hello\n")
-    client = _patch_paramiko(monkeypatch, lambda *a, **kw: chans)
+    _patch_paramiko(monkeypatch, lambda *a, **kw: chans)
     r = Router(cfg)
     r.connect()
     result = r.run("echo hello")

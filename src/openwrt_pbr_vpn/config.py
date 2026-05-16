@@ -10,9 +10,11 @@ The password may live in:
 - OS keyring (preferred) — service="openwrt-pbr-vpn", username=ROUTER_HOST
 - Never read from disk in plaintext unless ROUTER_PASSWORD env is set.
 """
+
 from __future__ import annotations
 
 import configparser
+import contextlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,8 +22,10 @@ from pathlib import Path
 try:
     from dotenv import load_dotenv
 except ImportError:  # dotenv is a runtime dep, but be graceful
+
     def load_dotenv(*_a, **_kw):
         return False
+
 
 try:
     import keyring
@@ -56,7 +60,9 @@ class Config:
         return f"pbr_{self.vpn_interface}_4_dst_ip_user"
 
 
-def _ini_get(parser: configparser.ConfigParser, section: str, key: str, default: str | None = None) -> str | None:
+def _ini_get(
+    parser: configparser.ConfigParser, section: str, key: str, default: str | None = None
+) -> str | None:
     try:
         return parser.get(section, key)
     except (configparser.NoSectionError, configparser.NoOptionError):
@@ -85,10 +91,8 @@ def store_password(host: str, password: str) -> None:
 def delete_password(host: str) -> None:
     if keyring is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         keyring.delete_password(KEYRING_SERVICE, host)
-    except Exception:
-        pass
 
 
 def load_config(
@@ -119,15 +123,9 @@ def load_config(
                 ini.read(cand, encoding="utf-8")
                 break
 
-    host = (
-        overrides.get("host")
-        or os.environ.get("ROUTER_HOST")
-        or _ini_get(ini, "router", "host")
-    )
+    host = overrides.get("host") or os.environ.get("ROUTER_HOST") or _ini_get(ini, "router", "host")
     if not host:
-        raise RuntimeError(
-            "Router host not configured. Set ROUTER_HOST in .env, or pass --host."
-        )
+        raise RuntimeError("Router host not configured. Set ROUTER_HOST in .env, or pass --host.")
 
     port = int(
         overrides.get("port")
@@ -171,11 +169,11 @@ def load_config(
         password=password,
         ssh_key=ssh_key,
         vpn_interface=os.environ.get("VPN_INTERFACE")
-            or _ini_get(ini, "vpn", "interface", "vpnclient")
-            or "vpnclient",
+        or _ini_get(ini, "vpn", "interface", "vpnclient")
+        or "vpnclient",
         remote_routes=os.environ.get("REMOTE_ROUTES_PATH")
-            or _ini_get(ini, "paths", "remote_routes", "/etc/pbr.d/vpn-routes.sh")
-            or "/etc/pbr.d/vpn-routes.sh",
+        or _ini_get(ini, "paths", "remote_routes", "/etc/pbr.d/vpn-routes.sh")
+        or "/etc/pbr.d/vpn-routes.sh",
         local_routes=Path(
             os.environ.get("LOCAL_ROUTES_PATH")
             or _ini_get(ini, "paths", "local_routes", "vpn-routes.sh")
@@ -193,7 +191,7 @@ def load_config(
         ),
         batch_size=int(_ini_get(ini, "behavior", "batch_size", "15") or 15),
         auto_aggregate_24=(_ini_get(ini, "behavior", "auto_aggregate_24", "true") or "true").lower()
-            in ("1", "true", "yes"),
+        in ("1", "true", "yes"),
         restart_pbr=(_ini_get(ini, "behavior", "restart_pbr", "true") or "true").lower()
-            in ("1", "true", "yes"),
+        in ("1", "true", "yes"),
     )

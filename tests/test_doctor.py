@@ -1,4 +1,5 @@
 """Tests for the doctor command — checks evaluate router state into a report."""
+
 from __future__ import annotations
 
 from unittest import mock
@@ -18,30 +19,45 @@ def cfg() -> Config:
 
 # ----- DoctorReport aggregation -----
 
+
 def test_overall_is_pass_when_all_pass():
     rep = DoctorReport(host="x", checks=[Check("a", "pass", "ok")])
     assert rep.overall == "pass"
 
 
 def test_overall_warn_when_any_warn():
-    rep = DoctorReport(host="x", checks=[
-        Check("a", "pass", ""), Check("b", "warn", ""),
-    ])
+    rep = DoctorReport(
+        host="x",
+        checks=[
+            Check("a", "pass", ""),
+            Check("b", "warn", ""),
+        ],
+    )
     assert rep.overall == "warn"
 
 
 def test_overall_fail_dominates():
-    rep = DoctorReport(host="x", checks=[
-        Check("a", "pass", ""), Check("b", "warn", ""), Check("c", "fail", ""),
-    ])
+    rep = DoctorReport(
+        host="x",
+        checks=[
+            Check("a", "pass", ""),
+            Check("b", "warn", ""),
+            Check("c", "fail", ""),
+        ],
+    )
     assert rep.overall == "fail"
 
 
 def test_summary_counts():
-    rep = DoctorReport(host="x", checks=[
-        Check("a", "pass", ""), Check("b", "pass", ""),
-        Check("c", "warn", ""), Check("d", "fail", ""),
-    ])
+    rep = DoctorReport(
+        host="x",
+        checks=[
+            Check("a", "pass", ""),
+            Check("b", "pass", ""),
+            Check("c", "warn", ""),
+            Check("d", "fail", ""),
+        ],
+    )
     assert rep.summary == {"pass": 2, "warn": 1, "fail": 1}
 
 
@@ -54,6 +70,7 @@ def test_to_dict_includes_overall_and_checks():
 
 
 # ----- Individual check fns -----
+
 
 def _mk_router(responses: dict[str, CommandResult]):
     r = mock.MagicMock()
@@ -95,22 +112,33 @@ def test_pbr_running_check_fails_when_absent():
 
 
 def test_vpn_interface_warn_when_down(cfg):
-    r = _mk_router({"ip link show vpnclient": CommandResult(
-        "x", 0, "22: vpnclient: <POINTOPOINT,NOARP> mtu 1280 state DOWN", "")})
+    r = _mk_router(
+        {
+            "ip link show vpnclient": CommandResult(
+                "x", 0, "22: vpnclient: <POINTOPOINT,NOARP> mtu 1280 state DOWN", ""
+            )
+        }
+    )
     c = doctor._check_vpn_interface(r, cfg)
     assert c.status == "warn"
 
 
 def test_vpn_interface_fail_when_missing(cfg):
-    r = _mk_router({"ip link show vpnclient": CommandResult(
-        "x", 1, "Device \"vpnclient\" does not exist.", "")})
+    r = _mk_router(
+        {"ip link show vpnclient": CommandResult("x", 1, 'Device "vpnclient" does not exist.', "")}
+    )
     c = doctor._check_vpn_interface(r, cfg)
     assert c.status == "fail"
 
 
 def test_vpn_interface_pass_when_up(cfg):
-    r = _mk_router({"ip link show vpnclient": CommandResult(
-        "x", 0, "22: vpnclient: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1280", "")})
+    r = _mk_router(
+        {
+            "ip link show vpnclient": CommandResult(
+                "x", 0, "22: vpnclient: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1280", ""
+            )
+        }
+    )
     c = doctor._check_vpn_interface(r, cfg)
     assert c.status == "pass"
 
@@ -118,9 +146,9 @@ def test_vpn_interface_pass_when_up(cfg):
 def test_firewall_zone_pass_when_in_wan(cfg):
     r = mock.MagicMock()
     r.run.return_value = CommandResult(
-        "x", 0,
-        "firewall.@zone[1]=zone\n"
-        "firewall.@zone[1].network='wan' 'wan6' 'vpnclient'\n",
+        "x",
+        0,
+        "firewall.@zone[1]=zone\nfirewall.@zone[1].network='wan' 'wan6' 'vpnclient'\n",
         "",
     )
     r.uci_get.return_value = "wan"
@@ -131,7 +159,8 @@ def test_firewall_zone_pass_when_in_wan(cfg):
 def test_firewall_zone_warn_when_in_separate_vpn_zone(cfg):
     r = mock.MagicMock()
     r.run.return_value = CommandResult(
-        "x", 0,
+        "x",
+        0,
         "firewall.@zone[2].network='vpnclient'\n",
         "",
     )
@@ -154,6 +183,7 @@ def test_nft_set_fail_when_set_missing(cfg):
         if "list set" in cmd:
             return CommandResult("x", 1, "Error: No such file or directory", "")
         return CommandResult("x", 0, "", "")
+
     r = mock.MagicMock()
     r.run.side_effect = run
     c = doctor._check_nft_set(r, cfg)
@@ -165,6 +195,7 @@ def test_nft_set_warn_when_empty(cfg):
         if "grep -c" in cmd:
             return CommandResult("x", 0, "0\n", "")
         return CommandResult("x", 0, "table inet fw4 { ... }", "")
+
     r = mock.MagicMock()
     r.run.side_effect = run
     c = doctor._check_nft_set(r, cfg)
@@ -176,6 +207,7 @@ def test_nft_set_pass_when_populated(cfg):
         if "grep -c" in cmd:
             return CommandResult("x", 0, "178\n", "")
         return CommandResult("x", 0, "table inet fw4 { set ... { ... } }", "")
+
     r = mock.MagicMock()
     r.run.side_effect = run
     c = doctor._check_nft_set(r, cfg)
@@ -199,12 +231,16 @@ def test_strict_enforcement_pass_when_on():
 
 # ----- format_human -----
 
+
 def test_format_human_renders_with_icons():
-    rep = DoctorReport(host="r1", checks=[
-        Check("a", "pass", "ok"),
-        Check("b", "warn", "watch out", fix="do x"),
-        Check("c", "fail", "broken", fix="do y"),
-    ])
+    rep = DoctorReport(
+        host="r1",
+        checks=[
+            Check("a", "pass", "ok"),
+            Check("b", "warn", "watch out", fix="do x"),
+            Check("c", "fail", "broken", fix="do y"),
+        ],
+    )
     text = doctor.format_human(rep)
     assert "[✓]" in text
     assert "[!]" in text
@@ -215,14 +251,17 @@ def test_format_human_renders_with_icons():
 
 # ----- exception inside a check is captured, not propagated -----
 
+
 def test_check_exception_becomes_fail(cfg):
     def boom(r, **_):
         raise RuntimeError("kaboom")
 
-    with mock.patch.object(doctor, "CHECKS", [boom]):
-        with mock.patch("openwrt_pbr_vpn.doctor.Router") as MockRouter:
-            MockRouter.return_value.__enter__.return_value = mock.MagicMock()
-            report = doctor.run(cfg)
+    with (
+        mock.patch.object(doctor, "CHECKS", [boom]),
+        mock.patch("openwrt_pbr_vpn.doctor.Router") as MockRouter,
+    ):
+        MockRouter.return_value.__enter__.return_value = mock.MagicMock()
+        report = doctor.run(cfg)
 
     assert len(report.checks) == 1
     assert report.checks[0].status == "fail"

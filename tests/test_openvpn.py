@@ -1,4 +1,5 @@
 """Tests for OpenVPN profile patching."""
+
 from __future__ import annotations
 
 from openwrt_pbr_vpn.openvpn import patch_for_split_tunnel

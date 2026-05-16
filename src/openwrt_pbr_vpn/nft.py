@@ -1,4 +1,5 @@
 """Parse and emit nft-set fragments used by `/etc/pbr.d/vpn-routes.sh`."""
+
 from __future__ import annotations
 
 import ipaddress

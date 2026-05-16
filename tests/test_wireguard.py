@@ -1,4 +1,5 @@
 """Tests for WireGuard .conf parsing."""
+
 from __future__ import annotations
 
 import pytest

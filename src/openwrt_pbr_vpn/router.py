@@ -4,12 +4,13 @@ dropbear (the default SSH server on OpenWrt) does not include an SFTP
 subsystem, so file upload is done through `cat > path` over an exec channel
 instead of `client.open_sftp()`.
 """
+
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 import paramiko
 
@@ -35,7 +36,7 @@ class Router:
         self.cfg = cfg
         self._client: paramiko.SSHClient | None = None
 
-    def __enter__(self) -> "Router":
+    def __enter__(self) -> Router:
         self.connect()
         return self
 
@@ -86,9 +87,7 @@ class Router:
         err = stderr.read().decode(errors="ignore")
         result = CommandResult(cmd=cmd, rc=rc, stdout=out, stderr=err)
         if check and not result.ok:
-            raise RuntimeError(
-                f"Command failed (rc={rc}): {cmd}\nstdout: {out}\nstderr: {err}"
-            )
+            raise RuntimeError(f"Command failed (rc={rc}): {cmd}\nstdout: {out}\nstderr: {err}")
         return result
 
     def run_many(self, cmds: list[str], timeout: int = 60) -> list[CommandResult]:

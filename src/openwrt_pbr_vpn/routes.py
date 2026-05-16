@@ -1,7 +1,6 @@
 """Main update flow: resolve domains → filter → append → push to router."""
-from __future__ import annotations
 
-from pathlib import Path
+from __future__ import annotations
 
 from . import doh, nft
 from .config import Config
@@ -94,9 +93,7 @@ def _upload_only(cfg: Config) -> None:
             res = r.run("service pbr restart", timeout=120)
             for line in res.stdout.splitlines():
                 log.info(f"    {line}")
-            count = r.run(
-                f"nft list set inet fw4 {cfg.nft_set} 2>/dev/null | grep -c '\\.'"
-            )
+            count = r.run(f"nft list set inet fw4 {cfg.nft_set} 2>/dev/null | grep -c '\\.'")
             log.info(f"  ✓ pbr restarted, set lines with dots: {count.stdout.strip()}")
 
 

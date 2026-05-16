@@ -1,4 +1,5 @@
 """Tests for argparse wiring + --json output mode."""
+
 from __future__ import annotations
 
 import json
@@ -8,8 +9,8 @@ import pytest
 
 from openwrt_pbr_vpn import cli
 
-
 # ----- argument parsing -----
+
 
 def test_update_parses_no_upload() -> None:
     parser = cli.build_parser()
@@ -53,6 +54,7 @@ def test_verbose_and_quiet_are_mutually_exclusive() -> None:
 
 # ----- main() dispatch and exit codes -----
 
+
 @mock.patch("openwrt_pbr_vpn.cli.cmd_update", return_value=({"new_ips": ["1.1.1.1"]}, "1 new"))
 def test_main_dispatches_and_prints_human(handler, capsys) -> None:
     rc = cli.main(["update", "--no-upload"])
@@ -71,7 +73,10 @@ def test_main_json_mode_emits_valid_json(handler, capsys) -> None:
     assert parsed == {"new_ips": ["1.1.1.1"]}
 
 
-@mock.patch("openwrt_pbr_vpn.cli.cmd_diagnose", return_value=({"host": "10.0.0.1", "tun0_up": True}, "tun0 UP"))
+@mock.patch(
+    "openwrt_pbr_vpn.cli.cmd_diagnose",
+    return_value=({"host": "10.0.0.1", "tun0_up": True}, "tun0 UP"),
+)
 def test_diagnose_json_contains_state_keys(handler, capsys) -> None:
     cli.main(["--json", "diagnose"])
     parsed = json.loads(capsys.readouterr().out)
@@ -103,6 +108,7 @@ def test_human_mode_falls_back_to_json_when_no_human_text(handler, capsys) -> No
 def test_json_flag_silences_info_logs(handler, capsys) -> None:
     """--json sets quiet=True so progress logs don't pollute stderr."""
     import logging
+
     handler.return_value = ({"x": 1}, "x")
     cli.main(["--json", "update"])
     # In quiet mode the root level is WARNING

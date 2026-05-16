@@ -1,11 +1,12 @@
 """Health checks and emergency procedures."""
+
 from __future__ import annotations
 
 import re
 from typing import Any
 
 from .config import Config
-from .output import fmt_age, fmt_bytes, get_logger
+from .output import fmt_bytes, get_logger
 from .router import Router
 
 log = get_logger("diagnose")
@@ -43,7 +44,9 @@ def collect_state(cfg: Config) -> dict[str, Any]:
         state["pbr_strict_enforcement"] = r.uci_get("pbr.config.strict_enforcement") == "1"
 
         # nft set size
-        cnt = r.run(f"nft list set inet fw4 {cfg.nft_set} 2>/dev/null | grep -c '\\.'").stdout.strip()
+        cnt = r.run(
+            f"nft list set inet fw4 {cfg.nft_set} 2>/dev/null | grep -c '\\.'"
+        ).stdout.strip()
         state["nft_set_dots"] = int(cnt) if cnt.isdigit() else 0
 
         # WAN ping
@@ -52,7 +55,9 @@ def collect_state(cfg: Config) -> dict[str, Any]:
 
         # OpenVPN profile (if any enabled)
         ovpn = r.run("uci show openvpn 2>&1 | grep 'enabled=.1.' | head -1").stdout.strip()
-        state["openvpn_enabled_profile"] = ovpn.split(".")[1] if ovpn and "openvpn." in ovpn else None
+        state["openvpn_enabled_profile"] = (
+            ovpn.split(".")[1] if ovpn and "openvpn." in ovpn else None
+        )
     return state
 
 
@@ -97,8 +102,9 @@ def _human_to_bytes(n: float, unit: str) -> int:
 def format_human(state: dict[str, Any]) -> str:
     """Pretty-print state dict for terminal."""
     lines = [f"=== {state['host']} ==="]
-    lines.append(f"VPN interface ({state['vpn_interface']}): "
-                 f"{'UP' if state['vpn_interface_up'] else 'DOWN'}")
+    lines.append(
+        f"VPN interface ({state['vpn_interface']}): {'UP' if state['vpn_interface_up'] else 'DOWN'}"
+    )
     lines.append(f"tun0: {'UP' if state['tun0_up'] else 'DOWN'}")
 
     wg = state.get("wireguard")
@@ -106,14 +112,14 @@ def format_human(state: dict[str, Any]) -> str:
         lines.append("WireGuard:")
         lines.append(f"  endpoint: {wg['endpoint']}")
         lines.append(f"  handshake: {wg['latest_handshake']}")
-        lines.append(
-            f"  rx={fmt_bytes(wg['rx_bytes'])} tx={fmt_bytes(wg['tx_bytes'])}"
-        )
+        lines.append(f"  rx={fmt_bytes(wg['rx_bytes'])} tx={fmt_bytes(wg['tx_bytes'])}")
     else:
         lines.append("WireGuard: not active")
 
-    lines.append(f"PBR: {'running' if state['pbr_running'] else 'NOT running'}, "
-                 f"strict={'ON' if state['pbr_strict_enforcement'] else 'off'}")
+    lines.append(
+        f"PBR: {'running' if state['pbr_running'] else 'NOT running'}, "
+        f"strict={'ON' if state['pbr_strict_enforcement'] else 'off'}"
+    )
     lines.append(f"nft set lines (dotted): {state['nft_set_dots']}")
     lines.append(f"WAN: {'OK' if state['wan_ping'] else 'NO REPLY'}")
     if state.get("openvpn_enabled_profile"):

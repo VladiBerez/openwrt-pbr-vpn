@@ -1,4 +1,5 @@
 """Tests for the update flow. Router and DoH are mocked."""
+
 from __future__ import annotations
 
 import shutil
@@ -35,8 +36,8 @@ def cfg(tmp_path: Path) -> Config:
 def test_update_skips_already_covered_ips(cfg: Config) -> None:
     """157.240.205.174 falls inside the existing 157.240.0.0/16 — must not be re-added."""
     resolved = {
-        "example.com": {"157.240.205.174"},   # already covered
-        "newservice.io": {"203.0.113.42"},    # new
+        "example.com": {"157.240.205.174"},  # already covered
+        "newservice.io": {"203.0.113.42"},  # new
     }
     with (
         mock.patch.object(doh, "resolve_many", return_value=resolved),

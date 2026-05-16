@@ -1,13 +1,9 @@
 """Tests for output module — logging setup, JSON emission, formatters."""
+
 from __future__ import annotations
 
-import io
 import json
 import logging
-import sys
-from unittest import mock
-
-import pytest
 
 from openwrt_pbr_vpn import output
 

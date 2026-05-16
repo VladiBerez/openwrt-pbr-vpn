@@ -1,4 +1,5 @@
 """DNS-over-HTTPS resolver. Same approach as the `rockblack.pro/ip-address` page."""
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,9 @@ DEFAULT_RESOLVERS: tuple[str, ...] = (
 )
 
 
-def resolve_a(domain: str, resolvers: tuple[str, ...] = DEFAULT_RESOLVERS, timeout: int = 8) -> set[str]:
+def resolve_a(
+    domain: str, resolvers: tuple[str, ...] = DEFAULT_RESOLVERS, timeout: int = 8
+) -> set[str]:
     """Resolve A records for one domain through all listed resolvers.
 
     Returns the union of IPs reported. Resolvers that fail are silently

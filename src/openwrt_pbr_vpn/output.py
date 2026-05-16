@@ -7,6 +7,7 @@ Design:
   by the CLI: pretty text in normal mode, machine-readable JSON when
   `--json` is set.
 """
+
 from __future__ import annotations
 
 import json

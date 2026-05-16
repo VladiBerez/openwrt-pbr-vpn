@@ -1,5 +1,9 @@
 # openwrt-pbr-vpn
 
+[![test](https://github.com/VladiBerez/openwrt-pbr-vpn/actions/workflows/test.yml/badge.svg)](https://github.com/VladiBerez/openwrt-pbr-vpn/actions/workflows/test.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Automated split-tunnel VPN management for **OpenWrt + PBR** routers. Resolves blocked-service domains through DoH (the way `rockblack.pro/ip-address` does in the browser, but headless), keeps an `nft` set up to date, and pushes everything to the router over SSH. Supports both OpenVPN and WireGuard, with probe/diagnose tooling for the DPI cat-and-mouse game.
 
 ## What problem this solves
@@ -45,9 +49,19 @@ ovpn-pbr ovpn set  --config x.ovpn  # configure OpenVPN as the VPN interface
 ovpn-pbr ovpn probe --dir ./configs/
 
 ovpn-pbr diagnose                   # tun/wg state, PBR, set size, route table
+ovpn-pbr doctor                     # self-check with PASS/WARN/FAIL + fix hints
 ovpn-pbr emergency-off              # disable kill-switch and stop VPN (restore raw WAN)
 ovpn-pbr keys install               # generate + push SSH key to router
 ovpn-pbr keys store                 # save router password in OS keyring
+```
+
+Every command accepts `--json` to emit a structured result for piping into
+other tools (the upcoming Next.js UI uses this exclusively):
+
+```bash
+ovpn-pbr --json diagnose | jq '.tun0_up'
+ovpn-pbr --json doctor   | jq '.overall'
+ovpn-pbr --json update   | jq '.new_ips | length'
 ```
 
 ## Documentation

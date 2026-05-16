@@ -3,13 +3,13 @@
 Inspired by `brew doctor` / `cargo doctor` — runs a fixed battery of checks
 and reports each as PASS/WARN/FAIL with an actionable suggestion.
 """
+
 from __future__ import annotations
 
-import ipaddress
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
-from . import diagnose
 from .config import Config
 from .output import get_logger
 from .router import Router
@@ -61,38 +61,57 @@ def _check_ssh(r: Router) -> Check:
     res = r.run("uname -a", timeout=10)
     if res.ok and res.stdout.strip():
         return Check("ssh_auth", "pass", f"SSH OK: {res.stdout.strip()}")
-    return Check("ssh_auth", "fail", "SSH connected but `uname` failed",
-                 "Check that the user has shell access; some routers disable it for non-root users.")
+    return Check(
+        "ssh_auth",
+        "fail",
+        "SSH connected but `uname` failed",
+        "Check that the user has shell access; some routers disable it for non-root users.",
+    )
 
 
 def _check_pbr_package(r: Router) -> Check:
-    res = r.run("which service && service pbr status >/dev/null 2>&1 || apk list --installed 2>/dev/null | grep -q '^pbr-'")
+    res = r.run(
+        "which service && service pbr status >/dev/null 2>&1 || apk list --installed 2>/dev/null | grep -q '^pbr-'"
+    )
     if res.ok:
         return Check("pbr_installed", "pass", "pbr package present")
-    return Check("pbr_installed", "fail", "pbr package not found",
-                 "Run on the router: apk add pbr luci-app-pbr")
+    return Check(
+        "pbr_installed",
+        "fail",
+        "pbr package not found",
+        "Run on the router: apk add pbr luci-app-pbr",
+    )
 
 
 def _check_pbr_running(r: Router) -> Check:
     res = r.run("service pbr status 2>&1 | head -3")
     if "pbr " in res.stdout:
         return Check("pbr_running", "pass", "PBR service is running")
-    return Check("pbr_running", "fail", "PBR not running",
-                 "Run on the router: service pbr enable && service pbr restart")
+    return Check(
+        "pbr_running",
+        "fail",
+        "PBR not running",
+        "Run on the router: service pbr enable && service pbr restart",
+    )
 
 
 def _check_vpn_interface(r: Router, cfg: Config) -> Check:
     res = r.run(f"ip link show {cfg.vpn_interface} 2>&1 | head -1")
     if "does not exist" in res.stdout:
         return Check(
-            "vpn_interface", "fail",
+            "vpn_interface",
+            "fail",
             f"Interface '{cfg.vpn_interface}' not configured",
             "Configure WireGuard with `ovpn-pbr wg set --config peer.conf` or OpenVPN with `ovpn-pbr ovpn set`.",
         )
     if "UP" in res.stdout:
         return Check("vpn_interface", "pass", f"{cfg.vpn_interface} is UP")
-    return Check("vpn_interface", "warn", f"{cfg.vpn_interface} exists but is DOWN",
-                 "Run on the router: ifup " + cfg.vpn_interface)
+    return Check(
+        "vpn_interface",
+        "warn",
+        f"{cfg.vpn_interface} exists but is DOWN",
+        "Run on the router: ifup " + cfg.vpn_interface,
+    )
 
 
 def _check_firewall_zone(r: Router, cfg: Config) -> Check:
@@ -113,34 +132,52 @@ def _check_firewall_zone(r: Router, cfg: Config) -> Check:
     if vpn_zone_name == "wan":
         return Check("firewall_zone", "pass", "vpnclient in WAN zone")
     if vpn_zone_name is None:
-        return Check("firewall_zone", "fail", f"{cfg.vpn_interface} not in any firewall zone",
-                     "Add to WAN zone: uci add_list firewall.@zone[1].network='vpnclient' && uci commit firewall && fw4 reload")
-    return Check("firewall_zone", "warn",
-                 f"{cfg.vpn_interface} in zone '{vpn_zone_name}' (not 'wan')",
-                 "Move to WAN zone — see docs/02-operations.md §4 for full procedure.")
+        return Check(
+            "firewall_zone",
+            "fail",
+            f"{cfg.vpn_interface} not in any firewall zone",
+            "Add to WAN zone: uci add_list firewall.@zone[1].network='vpnclient' && uci commit firewall && fw4 reload",
+        )
+    return Check(
+        "firewall_zone",
+        "warn",
+        f"{cfg.vpn_interface} in zone '{vpn_zone_name}' (not 'wan')",
+        "Move to WAN zone — see docs/02-operations.md §4 for full procedure.",
+    )
 
 
 def _check_nft_set(r: Router, cfg: Config) -> Check:
     res = r.run(f"nft list set inet fw4 {cfg.nft_set} 2>&1")
     if "No such file" in res.stdout or "does not exist" in res.stdout or not res.ok:
-        return Check("nft_set", "fail", f"nft set {cfg.nft_set} doesn't exist",
-                     "PBR creates it when the VPN interface is up. Bring up the VPN first.")
+        return Check(
+            "nft_set",
+            "fail",
+            f"nft set {cfg.nft_set} doesn't exist",
+            "PBR creates it when the VPN interface is up. Bring up the VPN first.",
+        )
     count_res = r.run(f"nft list set inet fw4 {cfg.nft_set} | grep -c '\\.'")
     n = int(count_res.stdout.strip() or 0)
     if n == 0:
-        return Check("nft_set", "warn", "nft set exists but is empty",
-                     "Run: ovpn-pbr update")
+        return Check("nft_set", "warn", "nft set exists but is empty", "Run: ovpn-pbr update")
     if n < 5:
-        return Check("nft_set", "warn", f"nft set has only {n} entries — likely empty seed",
-                     "Run: ovpn-pbr update")
+        return Check(
+            "nft_set",
+            "warn",
+            f"nft set has only {n} entries — likely empty seed",
+            "Run: ovpn-pbr update",
+        )
     return Check("nft_set", "pass", f"nft set has {n} dotted lines")
 
 
 def _check_wan_reach(r: Router) -> Check:
     res = r.run("ping -c 2 -W 2 1.1.1.1 | tail -2")
     if "0 packets received" in res.stdout or "0 received" in res.stdout:
-        return Check("wan_reachable", "fail", "Cannot reach 1.1.1.1 over WAN",
-                     "Check WAN: ifstatus wan; logread | tail -50")
+        return Check(
+            "wan_reachable",
+            "fail",
+            "Cannot reach 1.1.1.1 over WAN",
+            "Check WAN: ifstatus wan; logread | tail -50",
+        )
     return Check("wan_reachable", "pass", "WAN can reach 1.1.1.1")
 
 
@@ -149,7 +186,8 @@ def _check_strict_enforcement(r: Router) -> Check:
     if val == "1":
         return Check("strict_enforcement", "pass", "kill-switch ON (strict_enforcement=1)")
     return Check(
-        "strict_enforcement", "warn",
+        "strict_enforcement",
+        "warn",
         f"kill-switch OFF (strict_enforcement={val!r}). Traffic for VPN-set IPs leaks via WAN if VPN drops.",
         "Run: ovpn-pbr killswitch-on",
     )
@@ -159,9 +197,12 @@ def _check_routes_table(r: Router, cfg: Config) -> Check:
     res = r.run(f"ip route show table pbr_{cfg.vpn_interface} 2>&1 | head -3")
     if "default" in res.stdout:
         return Check("pbr_route_table", "pass", f"pbr_{cfg.vpn_interface} has default route")
-    return Check("pbr_route_table", "warn",
-                 f"pbr_{cfg.vpn_interface} has no default route",
-                 "PBR rebuilds this when VPN comes up. Try: service pbr restart")
+    return Check(
+        "pbr_route_table",
+        "warn",
+        f"pbr_{cfg.vpn_interface} has no default route",
+        "PBR rebuilds this when VPN comes up. Try: service pbr restart",
+    )
 
 
 CHECKS: list[Callable[..., Check]] = [
@@ -190,8 +231,12 @@ def run(cfg: Config) -> DoctorReport:
                 else:
                     c = check_fn(r)
             except Exception as e:
-                c = Check(check_fn.__name__.lstrip("_"), "fail",
-                          f"check exploded: {e}", "Inspect logs / re-run with -v")
+                c = Check(
+                    check_fn.__name__.lstrip("_"),
+                    "fail",
+                    f"check exploded: {e}",
+                    "Inspect logs / re-run with -v",
+                )
             report.checks.append(c)
     return report
 
@@ -199,9 +244,11 @@ def run(cfg: Config) -> DoctorReport:
 def format_human(report: DoctorReport) -> str:
     """Pretty-print a DoctorReport for terminal output."""
     icons = {"pass": "✓", "warn": "!", "fail": "✗"}
-    lines = [f"doctor: {report.host}  [{report.overall.upper()}]",
-             f"  pass={report.summary['pass']}  warn={report.summary['warn']}  fail={report.summary['fail']}",
-             ""]
+    lines = [
+        f"doctor: {report.host}  [{report.overall.upper()}]",
+        f"  pass={report.summary['pass']}  warn={report.summary['warn']}  fail={report.summary['fail']}",
+        "",
+    ]
     for c in report.checks:
         lines.append(f"  [{icons[c.status]}] {c.name}: {c.detail}")
         if c.status != "pass" and c.fix:

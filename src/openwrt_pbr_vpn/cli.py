@@ -1,4 +1,5 @@
 """Command-line interface for openwrt-pbr-vpn."""
+
 from __future__ import annotations
 
 import argparse
@@ -22,6 +23,7 @@ def _load(args) -> Config:
 
 
 # ----- subcommand handlers (each returns a dict + optional human-text) -----
+
 
 def cmd_update(args) -> tuple[dict, str]:
     cfg = _load(args)
@@ -187,6 +189,7 @@ def cmd_keys_test(args) -> tuple[dict, str]:
 
 # ----- parser wiring -----
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ovpn-pbr",
@@ -194,8 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--host", help="Override router host (else from .env)")
     p.add_argument("--user", help="Override SSH user")
-    p.add_argument("--json", action="store_true",
-                   help="Output result as JSON (for scripting / UI)")
+    p.add_argument("--json", action="store_true", help="Output result as JSON (for scripting / UI)")
     verbosity = p.add_mutually_exclusive_group()
     verbosity.add_argument("-v", "--verbose", action="store_true", help="Debug logging")
     verbosity.add_argument("-q", "--quiet", action="store_true", help="Suppress info logs")
@@ -239,9 +241,9 @@ def build_parser() -> argparse.ArgumentParser:
     a.set_defaults(func=cmd_ovpn_probe)
 
     sub.add_parser("diagnose", help="Print health/state").set_defaults(func=cmd_diagnose)
-    sub.add_parser("doctor", help="Self-check: run a battery of audits with fix hints").set_defaults(
-        func=cmd_doctor
-    )
+    sub.add_parser(
+        "doctor", help="Self-check: run a battery of audits with fix hints"
+    ).set_defaults(func=cmd_doctor)
     sub.add_parser("emergency-off", help="Disable kill-switch and stop VPN (raw WAN)").set_defaults(
         func=cmd_emergency_off
     )
@@ -255,7 +257,9 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--path", help="Key path (default ~/.ssh/id_openwrt)")
     a.add_argument("--force", action="store_true")
     a.set_defaults(func=cmd_keys_install)
-    sk.add_parser("store", help="Save router password in OS keyring").set_defaults(func=cmd_keys_store)
+    sk.add_parser("store", help="Save router password in OS keyring").set_defaults(
+        func=cmd_keys_store
+    )
     sk.add_parser("test", help="Verify current credentials work").set_defaults(func=cmd_keys_test)
 
     return p

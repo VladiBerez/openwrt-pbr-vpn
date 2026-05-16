@@ -1,4 +1,5 @@
 """WireGuard configuration on OpenWrt via UCI + probing endpoints for DPI survival."""
+
 from __future__ import annotations
 
 import re
@@ -15,9 +16,9 @@ log = get_logger("wireguard")
 
 @dataclass
 class WgPeer:
-    address: str           # e.g. "10.103.248.74/32"
+    address: str  # e.g. "10.103.248.74/32"
     private_key: str
-    public_key: str        # peer's public key
+    public_key: str  # peer's public key
     endpoint_host: str
     endpoint_port: int
     persistent_keepalive: int = 25
@@ -25,8 +26,9 @@ class WgPeer:
     dns: str | None = None  # only informational; we don't push it into UCI
 
     @classmethod
-    def from_conf(cls, conf_text: str) -> "WgPeer":
+    def from_conf(cls, conf_text: str) -> WgPeer:
         """Parse a WireGuard .conf as exported by most clients."""
+
         def grab(section: str, key: str) -> str | None:
             m = re.search(
                 rf"\[{section}\][^[]*?^\s*{key}\s*=\s*(.+?)\s*$",
@@ -45,7 +47,9 @@ class WgPeer:
         ka_raw = grab("Peer", "PersistentKeepalive")
 
         if not all([address, priv, pub, endpoint]):
-            raise ValueError("WireGuard .conf is missing required fields (Address/PrivateKey/PublicKey/Endpoint)")
+            raise ValueError(
+                "WireGuard .conf is missing required fields (Address/PrivateKey/PublicKey/Endpoint)"
+            )
 
         # endpoint can be "host:port" or "[v6]:port"
         if endpoint.startswith("["):
@@ -64,7 +68,7 @@ class WgPeer:
         )
 
     @classmethod
-    def from_file(cls, path: Path) -> "WgPeer":
+    def from_file(cls, path: Path) -> WgPeer:
         return cls.from_conf(Path(path).read_text(encoding="utf-8"))
 
 

@@ -1,11 +1,9 @@
 """Tests for DoH resolver. Network calls are mocked."""
+
 from __future__ import annotations
 
-import io
 import json
 from unittest import mock
-
-import pytest
 
 from openwrt_pbr_vpn import doh
 
@@ -39,11 +37,7 @@ def test_resolve_a_tolerates_one_failure() -> None:
 def test_load_domains_skips_comments_and_blanks(tmp_path) -> None:
     p = tmp_path / "domains.txt"
     p.write_text(
-        "# comment\n"
-        "\n"
-        "example.com\n"
-        "  foo.bar  \n"
-        "# another\n",
+        "# comment\n\nexample.com\n  foo.bar  \n# another\n",
         encoding="utf-8",
     )
     assert doh.load_domains(p) == ["example.com", "foo.bar"]

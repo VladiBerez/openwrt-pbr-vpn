@@ -1,9 +1,9 @@
 """Tests for nft set parsing, coverage, aggregation, append rendering."""
+
 from __future__ import annotations
 
 import ipaddress
 import shutil
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -23,16 +23,19 @@ def routes_file(tmp_path: Path) -> Path:
 
 # ----- parse_networks -----
 
+
 def test_extracts_all_cidrs_and_ips(routes_file: Path) -> None:
     nets = nft.parse_networks(routes_file)
     as_str = sorted(str(n) for n in nets)
-    assert as_str == sorted([
-        "157.240.0.0/16",
-        "91.108.4.0/22",
-        "1.2.3.4/32",
-        "172.217.0.0/16",
-        "142.250.0.0/15",
-    ])
+    assert as_str == sorted(
+        [
+            "157.240.0.0/16",
+            "91.108.4.0/22",
+            "1.2.3.4/32",
+            "172.217.0.0/16",
+            "142.250.0.0/15",
+        ]
+    )
 
 
 def test_ignores_ip_outside_nft_braces(routes_file: Path) -> None:
@@ -41,6 +44,7 @@ def test_ignores_ip_outside_nft_braces(routes_file: Path) -> None:
 
 
 # ----- is_covered -----
+
 
 @pytest.fixture()
 def sample_nets() -> list[ipaddress.IPv4Network]:
@@ -68,6 +72,7 @@ def test_invalid_ip_returns_true_to_filter_out(sample_nets) -> None:
 
 # ----- aggregate_into_24 -----
 
+
 def test_aggregates_when_3_or_more_in_same_24() -> None:
     ips = ["5.5.5.1", "5.5.5.2", "5.5.5.3", "6.6.6.1"]
     cidrs, singles = nft.aggregate_into_24(ips, existing=[])
@@ -91,6 +96,7 @@ def test_aggregate_skips_already_covered() -> None:
 
 
 # ----- render_append_block + append_to_file -----
+
 
 def test_render_produces_correct_batches() -> None:
     items = [f"10.0.0.{i}" for i in range(20)]
