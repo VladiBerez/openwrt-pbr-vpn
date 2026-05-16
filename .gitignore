@@ -54,3 +54,17 @@ desktop.ini
 hideme*/
 xmir-patcher*/
 unlock_mi.py
+
+# Personal planning / internal notes (not part of public repo)
+ROADMAP.md
+NOTES.md
+TODO.md
+.notes/
+
+# Next.js web UI (separate workspace, not committed yet)
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+web/.env.production.local
+web/.env.development.local
