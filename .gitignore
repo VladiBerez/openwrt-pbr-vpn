@@ -1,0 +1,56 @@
+# Credentials and local config
+.env
+.env.local
+router.conf
+config/router.conf
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+id_openwrt*
+
+# VPN profiles (contain secret keys)
+*.ovpn
+*.conf
+!config/*.example.*
+!tests/fixtures/*.ovpn
+!tests/fixtures/*.conf
+
+# Runtime state (not source)
+vpn-routes.sh
+domains.txt
+backups/
+*.bak
+*.bak.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Third-party
+hideme*/
+xmir-patcher*/
+unlock_mi.py

@@ -1,0 +1,25 @@
+# Optional INI-style config — kept for backward-compat with original setup.
+# Prefer .env (see .env.example) for new installs.
+#
+# Copy to ./router.conf (git-ignored) and fill in.
+
+[router]
+host = 192.168.1.1
+port = 22
+user = root
+# password = <your_password>     # only if not using SSH key / keyring
+# ssh_key = ~/.ssh/id_openwrt
+
+[vpn]
+interface = vpnclient
+
+[paths]
+local_routes = vpn-routes.sh
+remote_routes = /etc/pbr.d/vpn-routes.sh
+domains = domains.txt
+backups_dir = backups
+
+[behavior]
+restart_pbr = true
+auto_aggregate_24 = true
+batch_size = 15

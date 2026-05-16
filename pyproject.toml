@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openwrt-pbr-vpn"
+version = "0.1.0"
+description = "Automated split-tunnel VPN management for OpenWrt (PBR + OpenVPN/WireGuard) with DoH-based IP discovery for blocked services"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "openwrt-pbr-vpn contributors" }]
+keywords = ["openwrt", "vpn", "pbr", "wireguard", "openvpn", "split-tunnel", "doh"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+]
+dependencies = [
+    "paramiko>=3.4",
+    "python-dotenv>=1.0",
+    "keyring>=24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+ovpn-pbr = "openwrt_pbr_vpn.cli:main"
+
+[project.urls]
+Documentation = "https://github.com/your-org/openwrt-pbr-vpn/blob/main/docs/"
+Issues = "https://github.com/your-org/openwrt-pbr-vpn/issues"
+Source = "https://github.com/your-org/openwrt-pbr-vpn"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]

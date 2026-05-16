@@ -1,0 +1,140 @@
+# Starter list of domains. Copy to ./domains.txt and add/remove as needed.
+# Resolved through Google + Cloudflare DoH; A records get added to the PBR set.
+
+# === Meta / Instagram / Facebook / Threads ===
+www.instagram.com
+instagram.com
+i.instagram.com
+edge-chat.instagram.com
+static.cdninstagram.com
+scontent.cdninstagram.com
+www.facebook.com
+facebook.com
+graph.facebook.com
+m.facebook.com
+www.threads.net
+threads.net
+
+# === Twitter / X ===
+twitter.com
+x.com
+api.twitter.com
+api.x.com
+abs.twimg.com
+pbs.twimg.com
+video.twimg.com
+
+# === Telegram ===
+telegram.org
+web.telegram.org
+core.telegram.org
+t.me
+telegram.me
+desktop.telegram.org
+fragment.com
+
+# === YouTube / Google CDN ===
+www.youtube.com
+youtube.com
+m.youtube.com
+youtubei.googleapis.com
+i.ytimg.com
+yt3.ggpht.com
+googlevideo.com
+
+# === Discord ===
+discord.com
+discord.gg
+canary.discord.com
+ptb.discord.com
+cdn.discordapp.com
+media.discordapp.net
+gateway.discord.gg
+
+# === OpenAI / ChatGPT / Sora ===
+openai.com
+chat.openai.com
+chatgpt.com
+api.openai.com
+auth.openai.com
+auth0.openai.com
+platform.openai.com
+cdn.openai.com
+sora.com
+
+# === Anthropic / Claude ===
+anthropic.com
+claude.ai
+api.anthropic.com
+console.anthropic.com
+docs.anthropic.com
+
+# === Google Gemini / AI Studio ===
+gemini.google.com
+ai.google.dev
+aistudio.google.com
+generativelanguage.googleapis.com
+
+# === GitHub / Copilot ===
+github.com
+api.github.com
+api.githubcopilot.com
+raw.githubusercontent.com
+objects.githubusercontent.com
+codeload.github.com
+
+# === Other LLM / AI ===
+perplexity.ai
+www.perplexity.ai
+api.perplexity.ai
+mistral.ai
+chat.mistral.ai
+api.mistral.ai
+x.ai
+grok.com
+huggingface.co
+hf.co
+deepseek.com
+chat.deepseek.com
+cohere.com
+api.cohere.com
+together.ai
+api.together.xyz
+replicate.com
+fireworks.ai
+
+# === Image / Video generation ===
+midjourney.com
+www.midjourney.com
+stability.ai
+api.stability.ai
+runwayml.com
+app.runwayml.com
+suno.com
+suno.ai
+elevenlabs.io
+
+# === Reddit / LinkedIn / Netflix ===
+www.reddit.com
+reddit.com
+old.reddit.com
+i.redd.it
+v.redd.it
+www.linkedin.com
+linkedin.com
+www.netflix.com
+netflix.com
+
+# === Torrents / Russian-blocked media ===
+rutracker.org
+rutracker.net
+lostfilm.tv
+www.lostfilm.tv
+kino.pub
+
+# === Misc ===
+hub.docker.com
+registry.hub.docker.com
+spotify.com
+www.spotify.com
+soundcloud.com
