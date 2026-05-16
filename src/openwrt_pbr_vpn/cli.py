@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import diagnose, doctor, keys, openvpn, routes, wireguard
+from . import daemon, diagnose, doctor, keys, openvpn, routes, wireguard
 from .config import Config, load_config
 from .output import emit_result, setup_logging
 from .router import Router
@@ -158,6 +158,25 @@ def cmd_killswitch_on(args) -> tuple[dict, str]:
     return result, "✓ strict_enforcement=1"
 
 
+def cmd_daemon(args) -> tuple[dict, str]:
+    cfg = _load(args)
+    dcfg = daemon.DaemonConfig(
+        pool_dir=Path(args.pool),
+        check_interval=args.interval,
+        handshake_stale_seconds=args.handshake_stale,
+        dead_ttl=args.dead_ttl,
+        cooldown_seconds=args.cooldown,
+        consecutive_bad_to_switch=args.bad_threshold,
+        on_switch_cmd=args.on_switch,
+        on_fail_cmd=args.on_fail,
+        max_iterations=args.max_iterations,
+    )
+    d = daemon.Daemon(cfg, dcfg)
+    d.install_signal_handlers()
+    state = d.run()
+    return daemon.to_dict(state), f"daemon stopped; last peer={state.current_peer}"
+
+
 def cmd_doctor(args) -> tuple[dict, str]:
     cfg = _load(args)
     report = doctor.run(cfg)
@@ -244,6 +263,51 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "doctor", help="Self-check: run a battery of audits with fix hints"
     ).set_defaults(func=cmd_doctor)
+
+    s_daemon = sub.add_parser(
+        "daemon",
+        help="Long-running watchdog: monitor and auto-switch VPN peers from a pool",
+    )
+    s_daemon.add_argument("--pool", required=True, help="Directory with WireGuard .conf files")
+    s_daemon.add_argument(
+        "--interval",
+        type=int,
+        default=60,
+        help="Seconds between health checks (default 60)",
+    )
+    s_daemon.add_argument(
+        "--handshake-stale",
+        type=float,
+        default=300.0,
+        help="Handshake age (s) past which we consider it stale (default 300)",
+    )
+    s_daemon.add_argument(
+        "--dead-ttl",
+        type=float,
+        default=3600.0,
+        help="Skip a peer flagged dead for this many seconds (default 3600)",
+    )
+    s_daemon.add_argument(
+        "--cooldown",
+        type=float,
+        default=300.0,
+        help="Sleep this long when every peer is dead (default 300)",
+    )
+    s_daemon.add_argument(
+        "--bad-threshold",
+        type=int,
+        default=3,
+        help="Consecutive bad ticks before switching peers (default 3)",
+    )
+    s_daemon.add_argument("--on-switch", help="Shell command run with new peer name as $1")
+    s_daemon.add_argument("--on-fail", help="Shell command run with failed peer name as $1")
+    s_daemon.add_argument(
+        "--max-iterations",
+        type=int,
+        help="Stop after N ticks (mainly for tests; daemon runs forever otherwise)",
+    )
+    s_daemon.set_defaults(func=cmd_daemon)
+
     sub.add_parser("emergency-off", help="Disable kill-switch and stop VPN (raw WAN)").set_defaults(
         func=cmd_emergency_off
     )
