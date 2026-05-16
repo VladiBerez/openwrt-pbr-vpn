@@ -4,9 +4,11 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 from . import diagnose, keys, openvpn, routes, wireguard
 from .config import Config, load_config
+from .output import emit_result, setup_logging
 from .router import Router
 
 
@@ -19,137 +21,162 @@ def _load(args) -> Config:
     return load_config(**overrides)
 
 
-# ----- subcommand handlers -----
+# ----- subcommand handlers (each returns a dict + optional human-text) -----
 
-def cmd_update(args) -> int:
+def cmd_update(args) -> tuple[dict, str]:
     cfg = _load(args)
-    routes.update(cfg, upload=not args.no_upload)
-    return 0
+    summary = routes.update(cfg, upload=not args.no_upload)
+    human = (
+        f"domains={summary['domains']} "
+        f"resolved={summary['total_resolved']} "
+        f"new={len(summary['new_ips'])} "
+        f"uploaded={summary['uploaded']}"
+    )
+    return summary, human
 
 
-def cmd_upload(args) -> int:
+def cmd_upload(args) -> tuple[dict, str]:
     cfg = _load(args)
     routes.upload_only(cfg)
-    return 0
+    return {"uploaded": True}, "✓ uploaded"
 
 
-def cmd_routes_show(args) -> int:
+def cmd_routes_show(args) -> tuple[dict, str]:
     cfg = _load(args)
-    print(routes.routes_show(cfg))
-    return 0
+    raw = routes.routes_show(cfg)
+    return {"raw": raw}, raw
 
 
-def cmd_routes_add(args) -> int:
+def cmd_routes_add(args) -> tuple[dict, str]:
     cfg = _load(args)
     routes.routes_add(cfg, args.entries)
-    return 0
+    return {"added": args.entries}, f"✓ added {len(args.entries)} entries"
 
 
-def cmd_routes_rm(args) -> int:
+def cmd_routes_rm(args) -> tuple[dict, str]:
     cfg = _load(args)
-    routes.routes_remove(cfg, args.entries)
-    return 0
+    n = routes.routes_remove(cfg, args.entries)
+    return {"removed": n, "requested": args.entries}, f"✓ removed {n}/{len(args.entries)}"
 
 
-def cmd_wg_set(args) -> int:
+def cmd_wg_set(args) -> tuple[dict, str]:
     cfg = _load(args)
     peer = wireguard.WgPeer.from_file(Path(args.config))
     with Router(cfg) as r:
         wireguard.apply(r, cfg, peer)
-        print(wireguard.show(r, cfg))
-    return 0
+        raw = wireguard.show(r, cfg)
+    result = {
+        "endpoint": f"{peer.endpoint_host}:{peer.endpoint_port}",
+        "address": peer.address,
+        "wg_show": raw,
+    }
+    return result, f"✓ applied WireGuard peer {peer.endpoint_host}:{peer.endpoint_port}"
 
 
-def cmd_wg_show(args) -> int:
+def cmd_wg_show(args) -> tuple[dict, str]:
     cfg = _load(args)
-    with Router(cfg) as r:
-        print(wireguard.show(r, cfg))
-    return 0
+    state = diagnose.collect_state(cfg)
+    wg = state.get("wireguard")
+    if not wg:
+        return {"wireguard": None}, "WireGuard not active"
+    human = (
+        f"endpoint={wg['endpoint']}\n"
+        f"handshake={wg['latest_handshake']}\n"
+        f"rx={wg['rx_bytes']} tx={wg['tx_bytes']}"
+    )
+    return {"wireguard": wg}, human
 
 
-def cmd_wg_probe(args) -> int:
+def cmd_wg_probe(args) -> tuple[dict, str]:
     cfg = _load(args)
     files = sorted(Path(args.dir).glob("*.conf"))
     if not files:
-        print(f"No .conf files in {args.dir}", file=sys.stderr)
-        return 2
+        raise FileNotFoundError(f"No .conf files in {args.dir}")
     peers = [(p.stem, wireguard.WgPeer.from_file(p)) for p in files]
     with Router(cfg) as r:
         winner = wireguard.probe(r, cfg, peers)
     if winner:
-        print(f"\nWINNER: {winner[0]}")
-        return 0
-    print("\nNone of the candidates passed the data-channel test.", file=sys.stderr)
-    return 1
+        return (
+            {"winner": winner[0], "candidates": [p[0] for p in peers]},
+            f"WINNER: {winner[0]}",
+        )
+    return (
+        {"winner": None, "candidates": [p[0] for p in peers]},
+        "No candidate survived the data-channel test",
+    )
 
 
-def cmd_ovpn_set(args) -> int:
+def cmd_ovpn_set(args) -> tuple[dict, str]:
     cfg = _load(args)
     path = Path(args.config)
     with Router(cfg) as r:
         openvpn.install(r, cfg, path.stem, path.read_text(encoding="utf-8"))
         openvpn.restart(r)
         ok = openvpn.wait_for_tun(r)
-        print("tun0 UP" if ok else "tun0 did NOT come up — check logs")
-        print(openvpn.last_log(r))
-    return 0 if ok else 1
+    return (
+        {"profile": path.stem, "tun_up": ok},
+        "tun0 UP" if ok else "tun0 did NOT come up — check logs",
+    )
 
 
-def cmd_ovpn_probe(args) -> int:
+def cmd_ovpn_probe(args) -> tuple[dict, str]:
     cfg = _load(args)
     files = sorted(Path(args.dir).glob("*.ovpn"))
     if not files:
-        print(f"No .ovpn files in {args.dir}", file=sys.stderr)
-        return 2
+        raise FileNotFoundError(f"No .ovpn files in {args.dir}")
     profiles = [(p.stem.replace(" ", "_").replace(",", ""), p) for p in files]
     with Router(cfg) as r:
         winner = openvpn.probe(r, cfg, profiles)
     if winner:
-        print(f"\nWINNER: {winner[0]}")
-        return 0
-    print("\nNo profile survived. ТСПУ likely blocks OpenVPN.", file=sys.stderr)
-    return 1
+        return (
+            {"winner": winner[0], "candidates": [p[0] for p in profiles]},
+            f"WINNER: {winner[0]}",
+        )
+    return (
+        {"winner": None, "candidates": [p[0] for p in profiles]},
+        "No profile survived — DPI likely blocks OpenVPN",
+    )
 
 
-def cmd_diagnose(args) -> int:
+def cmd_diagnose(args) -> tuple[dict, str]:
     cfg = _load(args)
-    diagnose.diagnose(cfg)
-    return 0
+    state = diagnose.diagnose(cfg)
+    return state, diagnose.format_human(state)
 
 
-def cmd_emergency_off(args) -> int:
+def cmd_emergency_off(args) -> tuple[dict, str]:
     cfg = _load(args)
-    diagnose.emergency_off(cfg)
-    return 0
+    result = diagnose.emergency_off(cfg)
+    return result, "✓ kill-switch off, VPN stopped"
 
 
-def cmd_killswitch_on(args) -> int:
+def cmd_killswitch_on(args) -> tuple[dict, str]:
     cfg = _load(args)
-    diagnose.enable_killswitch(cfg)
-    return 0
+    result = diagnose.enable_killswitch(cfg)
+    return result, "✓ strict_enforcement=1"
 
 
-def cmd_keys_install(args) -> int:
+def cmd_keys_install(args) -> tuple[dict, str]:
     cfg = _load(args)
     path = Path(args.path) if args.path else keys.DEFAULT_KEY_PATH
     keys.generate_key(path, force=args.force)
     keys.install_key(cfg, path)
-    return 0
+    return {"key_path": str(path), "host": cfg.host}, f"✓ key installed on {cfg.host}"
 
 
-def cmd_keys_store(args) -> int:
+def cmd_keys_store(args) -> tuple[dict, str]:
     cfg = _load(args)
     keys.keyring_store(cfg)
-    return 0
+    return {"host": cfg.host}, f"✓ password saved for {cfg.host}"
 
 
-def cmd_keys_test(args) -> int:
+def cmd_keys_test(args) -> tuple[dict, str]:
     cfg = _load(args)
     try:
         keys.keyring_test(cfg)
-        return 0
-    except Exception:
-        return 1
+        return {"host": cfg.host, "ok": True}, "✓ authenticated"
+    except Exception as e:
+        return {"host": cfg.host, "ok": False, "error": str(e)}, f"✗ {e}"
 
 
 # ----- parser wiring -----
@@ -161,6 +188,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--host", help="Override router host (else from .env)")
     p.add_argument("--user", help="Override SSH user")
+    p.add_argument("--json", action="store_true",
+                   help="Output result as JSON (for scripting / UI)")
+    verbosity = p.add_mutually_exclusive_group()
+    verbosity.add_argument("-v", "--verbose", action="store_true", help="Debug logging")
+    verbosity.add_argument("-q", "--quiet", action="store_true", help="Suppress info logs")
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -223,14 +255,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    setup_logging(verbose=args.verbose, quiet=args.quiet or args.json)
     try:
-        return args.func(args)
+        outcome: Any = args.func(args)
     except KeyboardInterrupt:
-        print("\nInterrupted.", file=sys.stderr)
+        sys.stderr.write("\nInterrupted.\n")
         return 130
     except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        sys.stderr.write(f"ERROR: {e}\n")
         return 1
+
+    # Handlers return (result_dict, human_str). Older ones may return None.
+    if isinstance(outcome, tuple) and len(outcome) == 2:
+        result, human = outcome
+    else:
+        result, human = outcome, None
+    emit_result(result, as_json=args.json, human=human)
+    return 0
 
 
 if __name__ == "__main__":

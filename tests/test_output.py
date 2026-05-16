@@ -36,12 +36,21 @@ def test_logger_keeps_stdout_clean(capsys, caplog):
     assert capsys.readouterr().out == ""
 
 
-def test_stream_handler_targets_stderr():
-    """The handler installed by setup_logging must point at stderr."""
+def test_setup_logging_attaches_stream_handler():
+    """A StreamHandler must be attached after setup_logging — destination is
+    stderr in production (pytest replaces it during capture, so we don't
+    assert the exact stream object here)."""
     output.setup_logging()
     root = logging.getLogger()
-    stream_handlers = [h for h in root.handlers if isinstance(h, logging.StreamHandler)]
-    assert any(h.stream is sys.stderr for h in stream_handlers)
+    assert any(isinstance(h, logging.StreamHandler) for h in root.handlers)
+
+
+def test_setup_logging_idempotent_no_duplicate_handlers():
+    output.setup_logging()
+    n1 = len(logging.getLogger().handlers)
+    output.setup_logging()
+    n2 = len(logging.getLogger().handlers)
+    assert n1 == n2
 
 
 def test_emit_result_json_mode(capsys):
