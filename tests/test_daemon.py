@@ -330,6 +330,79 @@ def test_daemon_resets_dead_cache_when_all_dead(pool: Path, cfg: Config) -> None
     assert sleeps  # at least one
 
 
+def test_full_recovery_scenario(pool: Path, cfg: Config) -> None:
+    """End-to-end story: 'when the provider fixes one of three endpoints,
+    the daemon eventually lands on it and stays there.'
+
+    Timeline (consecutive_bad_to_switch=1 to keep the test short):
+      tick 0 (peer0): tx grew while rx flat   → NO_DATA → mark peer0 dead, switch
+      tick 1 (peer1): tx grew while rx flat   → NO_DATA → mark peer1 dead, switch
+      tick 2 (peer2): rx grew                 → HEALTHY → stays
+      tick 3 (peer2): rx grew again           → HEALTHY → stays
+    """
+    d, fake_router = _mk_daemon(cfg, pool, max_iter=4)
+
+    samples = iter(
+        [
+            # tick 0: tx grew, rx flat → NO_DATA → switch peer0→peer1
+            (0, 5000, 30.0, True),
+            # tick 1: again tx grew, rx flat → NO_DATA → switch peer1→peer2
+            (0, 200, 30.0, True),
+            # tick 2: peer2 returns real data — HEALTHY (rx grew)
+            (1500, 800, 5.0, True),
+            # tick 3: still HEALTHY
+            (3000, 1200, 5.0, True),
+        ]
+    )
+
+    applied: list[str] = []
+
+    def fake_apply(_r, _cfg, peer):
+        applied.append(peer.endpoint_host)
+
+    with (
+        mock.patch.object(daemon, "Router", return_value=fake_router),
+        mock.patch.object(daemon, "_apply_peer", side_effect=fake_apply),
+        mock.patch.object(daemon, "sample_counters", side_effect=lambda *_a: next(samples)),
+    ):
+        state = d.run()
+
+    # peer0 + peer1 must be in the dead cache; peer2 must NOT be.
+    assert "peer0" in state.dead
+    assert "peer1" in state.dead
+    assert "peer2" not in state.dead
+    # Daemon ended up actively on peer2.
+    assert state.current_peer == "peer2"
+    # Endpoints applied (peer0=1.1.1.1, peer1=2.2.2.2, peer2=3.3.3.3 per fixture).
+    assert applied == ["1.1.1.1", "2.2.2.2", "3.3.3.3"]
+
+
+def test_recovery_when_first_endpoint_is_already_good(pool: Path, cfg: Config) -> None:
+    """If the very first endpoint we try is healthy, we never switch."""
+    d, fake_router = _mk_daemon(cfg, pool, max_iter=3)
+
+    # Every tick shows rx growing — always HEALTHY.
+    samples = iter(
+        [
+            (5000, 1000, 10.0, True),  # tick 0: rx grew → HEALTHY
+            (10000, 2000, 8.0, True),  # tick 1: HEALTHY
+            (15000, 3000, 6.0, True),  # tick 2: HEALTHY
+        ]
+    )
+
+    with (
+        mock.patch.object(daemon, "Router", return_value=fake_router),
+        mock.patch.object(daemon, "_apply_peer") as apply_peer,
+        mock.patch.object(daemon, "sample_counters", side_effect=lambda *_a: next(samples)),
+    ):
+        state = d.run()
+
+    # Only the initial apply, no switches.
+    assert apply_peer.call_count == 1
+    assert state.current_peer == "peer0"
+    assert state.dead == {}
+
+
 def test_daemon_stop_breaks_loop(pool: Path, cfg: Config) -> None:
     d, fake_router = _mk_daemon(cfg, pool, max_iter=100)
     iter_count = {"n": 0}
