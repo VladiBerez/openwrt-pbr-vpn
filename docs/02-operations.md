@@ -46,9 +46,9 @@ ovpn-pbr keys test                 # verify current creds work
 
 ---
 
-## 3. WireGuard instead of OpenVPN
+## 3. WireGuard (recommended)
 
-When OpenVPN gets blocked (see [03-anti-dpi.md](03-anti-dpi.md)), WireGuard is the next thing to try.
+As of May 2026, WireGuard with regularly rotated endpoints is the primary tunnel type. OpenVPN data channels are actively blocked by ТСПУ (see [03-anti-dpi.md](03-anti-dpi.md)).
 
 ```bash
 ovpn-pbr wg set --config peer.conf
@@ -217,4 +217,43 @@ Tests:
 ```bash
 pip install -e ".[dev]"
 pytest -v
+```
+
+---
+
+## 10. Web UI (optional)
+
+A local Next.js dashboard that wraps `ovpn-pbr` commands in a browser interface.
+
+```bash
+cd openwrt-pbr-vpn-ui
+npm install
+npm run dev        # development: http://localhost:3000
+npm run build && npm start  # production
+```
+
+**Pages:**
+
+| Page | URL | What it does |
+|------|-----|-------------|
+| Dashboard | `/` | Live status from `ovpn-pbr diagnose`, Update routes, Emergency off |
+| Endpoints | `/endpoints` | List `.conf` files in `VPN_POOL_DIR`, Switch button, Probe all |
+| Routes | `/routes` | View/add/remove nft-set entries (calls `ovpn-pbr routes …`) |
+| Doctor | `/doctor` | Run `ovpn-pbr doctor` self-check |
+| Diagnose | `/diagnose` | Full `ovpn-pbr diagnose` output |
+
+**Environment variables (`.env.local` in `openwrt-pbr-vpn-ui/`):**
+
+```
+VPN_POOL_DIR=../vpn-pool         # path to folder with .conf files (default: ./vpn-pool)
+ROUTER_HOST=192.168.1.1          # forwarded to ovpn-pbr via its own config
+```
+
+The Web UI spawns `ovpn-pbr` as a subprocess for every API call; it reads router credentials from the same `.env` / SSH key the CLI uses. All mutating calls go through an internal serial queue so there are no race conditions on the router.
+
+Tests for the UI:
+
+```bash
+cd openwrt-pbr-vpn-ui
+npm test           # vitest — 142 tests, ~2.4s
 ```

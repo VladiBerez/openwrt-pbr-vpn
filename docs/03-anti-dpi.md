@@ -1,6 +1,8 @@
 # 03. When the VPN itself gets blocked (anti-DPI playbook)
 
-The Russian DPI infrastructure ("ТСПУ") evolved from blocking specific sites by IP to active protocol detection. As of mid-May 2026, plain OpenVPN and WireGuard handshakes pass through, but the **data channel** is selectively dropped right after — you'll see `tun0` up, `wg show` reports a successful handshake, then nothing flows.
+The Russian DPI infrastructure ("ТСПУ") evolved from blocking specific sites by IP to active protocol detection. Starting 15 May 2026, plain OpenVPN and WireGuard handshakes pass through, but the **data channel** is selectively dropped right after — you'll see `tun0` up, `wg show` reports a successful handshake, then nothing flows.
+
+HideMyName rotated endpoints within ~48 hours of the initial block (17 May 2026). However ТСПУ continues to update its heuristics, so new blocks can appear at any time. **Download fresh `.conf` files from your provider when probing fails**, then re-run `wg probe` or use the Web UI.
 
 This document covers diagnosis and known workarounds.
 
@@ -48,11 +50,13 @@ wg show vpnclient transfer     # rx counter
 When your provider gives you a folder of country configs, brute-force test them:
 
 ```bash
-ovpn-pbr wg probe --dir ./hideme/wireguard/
-ovpn-pbr ovpn probe --dir ./hideme/openvpn/
+ovpn-pbr wg probe --dir ./vpn-pool/
+ovpn-pbr ovpn probe --dir ./vpn-pool/
 ```
 
-This applies each config, generates a few seconds of test traffic, and only accepts an endpoint if the RX counter actually grows past a threshold. Stops at the first survivor.
+Or use the Web UI: **Endpoints → Probe all**. The UI calls `/api/probe` which runs `wg probe --dir $VPN_POOL_DIR` with a 5-minute timeout and shows the winner inline.
+
+The probe applies each config, generates a few seconds of test traffic, and only accepts an endpoint if the RX counter actually grows past a threshold. Stops at the first survivor.
 
 ---
 

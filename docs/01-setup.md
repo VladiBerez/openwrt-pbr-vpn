@@ -1,8 +1,10 @@
 # 01. Initial OpenWrt + PBR + VPN setup
 
-One-time router-side configuration. After this, day-to-day work happens through `ovpn-pbr` from your workstation (see [02-operations.md](02-operations.md)).
+One-time router-side configuration. After this, day-to-day work happens through `ovpn-pbr` from your workstation (see [02-operations.md](02-operations.md)) or the [Web UI](../../openwrt-pbr-vpn-ui/README.md).
 
-**Verified on:** OpenWrt 25.12.2, PBR 1.2.2-r12, OpenVPN 2.6 / WireGuard.
+**Verified on:** OpenWrt 25.12.2, PBR 1.2.2-r12, WireGuard (primary as of May 2026) / OpenVPN 2.6.
+
+> **Note (May 2026):** Russian ТСПУ DPI began aggressively dropping OpenVPN and WireGuard data channels starting 15 May 2026. WireGuard with fresh endpoints from your provider is currently the most reliable option. See [03-anti-dpi.md](03-anti-dpi.md) if probing fails for all endpoints.
 
 ---
 
@@ -16,14 +18,16 @@ One-time router-side configuration. After this, day-to-day work happens through 
         │
         ├─► Regular traffic (8.8.8.8, banks, work tools…) ──► WAN
         │
-        └─► Traffic to IPs in the VPN set ──► tun0/vpnclient ──► VPN exit
+        └─► Traffic to IPs in the VPN set ──► vpnclient ──► WireGuard exit
 ```
 
 | Component | Role |
 |-----------|------|
-| **OpenVPN** or **WireGuard** | Brings up the tunnel (`tun0` for OpenVPN, `vpnclient` for WG) |
+| **WireGuard** (or OpenVPN) | Brings up `vpnclient` interface |
 | **PBR** (`pbr` + `luci-app-pbr`) | Marks matching packets via nftables, sends them via the VPN routing table |
 | **`/etc/pbr.d/vpn-routes.sh`** | Custom user file — populates nft-set `pbr_vpnclient_4_dst_ip_user` |
+| **`ovpn-pbr`** (workstation CLI) | Resolves domains, pushes route updates, switches WG endpoints |
+| **Web UI** (optional, localhost:3000) | Browser dashboard for status, endpoint switching, and route editing |
 
 PBR does **not** block anything. It only **redirects** matches into the VPN; everything else takes the normal WAN path.
 
@@ -36,8 +40,8 @@ PBR docs: <https://docs.openwrt.melmac.ca/pbr/1.2.2/#custom-user-files>
 ```sh
 apk update
 apk add pbr luci-app-pbr
-apk add openvpn-openssl luci-app-openvpn        # OpenVPN
-apk add wireguard-tools kmod-wireguard          # WireGuard
+apk add wireguard-tools kmod-wireguard          # WireGuard (recommended)
+apk add openvpn-openssl luci-app-openvpn        # OpenVPN (fallback)
 # Useful helpers:
 apk add resolveip ip-full
 ```
@@ -46,9 +50,31 @@ Then in LuCI: **Services → Policy Based Routing** — enable the service.
 
 ---
 
-## 3. VPN client (OpenVPN, split-tunnel)
+## 3. VPN client
 
-### 3.1. `.ovpn` requirements
+### 3.0. WireGuard (recommended)
+
+`ovpn-pbr wg set --config peer.conf` handles the full setup: it parses the `.conf` file and writes the correct UCI configuration.
+
+```bash
+# Apply a WireGuard peer from your provider (place .conf files in vpn-pool/)
+ovpn-pbr wg set --config vpn-pool/finland.conf
+
+# Or use the Web UI → Endpoints page → Switch button
+```
+
+This creates the `vpnclient` interface as `proto=wireguard` with `route_allowed_ips='0'` (critical for split-tunnel — see [02-operations.md §3](02-operations.md#3-wireguard-recommended)). If you want to test all peers automatically:
+
+```bash
+ovpn-pbr wg probe --dir vpn-pool/
+# Or use Endpoints → Probe all in the Web UI
+```
+
+For the underlying UCI structure, see [02-operations.md §3](02-operations.md#3-wireguard-recommended).
+
+---
+
+### 3.1. OpenVPN (fallback) — `.ovpn` requirements
 
 For split-tunnel the profile **must** include:
 
@@ -170,3 +196,10 @@ service pbr status
 | `8.8.8.8` | 30–40ms (direct WAN) |
 
 If everything works, move on to [02-operations.md](02-operations.md) for day-to-day automation.
+
+Optionally start the Web UI for a browser-based dashboard:
+
+```bash
+cd openwrt-pbr-vpn-ui
+npm run build && npm start   # http://localhost:3000
+```
