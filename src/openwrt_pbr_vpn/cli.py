@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import amnezia, daemon, diagnose, doctor, keys, openvpn, routes, wireguard
+from . import amnezia, daemon, diagnose, doctor, keys, openvpn, routes, warp, wireguard, xray
 from .config import Config, load_config
 from .output import emit_result, setup_logging
 from .router import Router
@@ -105,6 +105,21 @@ def cmd_wg_probe(args) -> tuple[dict, str]:
     return (
         {"winner": None, "candidates": [p[0] for p in peers]},
         "No candidate survived the data-channel test",
+    )
+
+
+_DEFAULT_WGCF_URL = (
+    "https://github.com/ViRb3/wgcf/releases/latest/download/wgcf_linux_mips"
+)
+
+
+def cmd_wg_warp(args) -> tuple[dict, str]:
+    cfg = _load(args)
+    with Router(cfg) as r:
+        peer = warp.install(r, cfg, wgcf_url=args.wgcf_url)
+    return (
+        {"endpoint": f"{peer.endpoint_host}:{peer.endpoint_port}", "address": peer.address},
+        f"✓ WARP applied to {cfg.vpn_interface}",
     )
 
 
@@ -212,6 +227,22 @@ def cmd_keys_test(args) -> tuple[dict, str]:
         return {"host": cfg.host, "ok": False, "error": str(e)}, f"✗ {e}"
 
 
+def cmd_xray_install(args) -> tuple[dict, str]:
+    cfg = _load(args)
+    with Router(cfg) as r:
+        result = xray.install(
+            r,
+            cfg,
+            args.server,
+            args.uuid,
+            sni=args.sni,
+            public_key=args.public_key,
+            short_id=args.short_id,
+            fingerprint=args.fingerprint,
+        )
+    return result, f"✓ Xray installed on {cfg.host}"
+
+
 # ----- parser wiring -----
 
 
@@ -255,6 +286,13 @@ def build_parser() -> argparse.ArgumentParser:
     a = sw.add_parser("probe", help="Try each .conf in dir, return first that survives DPI")
     a.add_argument("--dir", required=True)
     a.set_defaults(func=cmd_wg_probe)
+    a = sw.add_parser("warp", help="Register Cloudflare WARP via wgcf and apply as VPN interface")
+    a.add_argument(
+        "--wgcf-url",
+        default=_DEFAULT_WGCF_URL,
+        help="URL to download the wgcf binary (default: Linux MIPS build from GitHub)",
+    )
+    a.set_defaults(func=cmd_wg_warp)
 
     s_ovpn = sub.add_parser("ovpn", help="OpenVPN control")
     so = s_ovpn.add_subparsers(dest="sub", required=True)
@@ -344,6 +382,38 @@ def build_parser() -> argparse.ArgumentParser:
         "check",
         help="Check whether kmod-amneziawg is available for this router's arch/kernel",
     ).set_defaults(func=cmd_amnezia_check)
+
+    s_xray = sub.add_parser("xray", help="Xray-core VLESS+Reality control")
+    sx = s_xray.add_subparsers(dest="sub", required=True)
+    a = sx.add_parser(
+        "install",
+        help="Install Xray-core binary and configure a VLESS+Reality outbound",
+    )
+    a.add_argument("--server", required=True, help="VLESS server IP or hostname")
+    a.add_argument("--uuid", required=True, help="VLESS user UUID")
+    a.add_argument(
+        "--sni",
+        default="www.microsoft.com",
+        help="TLS SNI / Reality server name (default: www.microsoft.com)",
+    )
+    a.add_argument(
+        "--public-key",
+        default="",
+        dest="public_key",
+        help="Reality public key (base64)",
+    )
+    a.add_argument(
+        "--short-id",
+        default="",
+        dest="short_id",
+        help="Reality short ID (hex)",
+    )
+    a.add_argument(
+        "--fingerprint",
+        default="chrome",
+        help="uTLS fingerprint (default: chrome)",
+    )
+    a.set_defaults(func=cmd_xray_install)
 
     return p
 
