@@ -421,3 +421,142 @@ def test_daemon_stop_breaks_loop(pool: Path, cfg: Config) -> None:
         d.run()
     # Loop exited well before max_iter=100
     assert iter_count["n"] <= 5
+
+
+# ----- hook tests -----
+
+
+def _mk_daemon_with_hooks(
+    cfg: Config,
+    pool: Path,
+    *,
+    on_switch: str | None = None,
+    on_fail: str | None = None,
+    max_iter: int = 1,
+) -> tuple[Daemon, mock.MagicMock]:
+    """Like _mk_daemon but with hook scripts configured."""
+    fake_router = mock.MagicMock()
+    fake_router.__enter__.return_value = fake_router
+    fake_router.__exit__.return_value = False
+
+    dcfg = DaemonConfig(
+        pool_dir=pool,
+        check_interval=0,
+        handshake_stale_seconds=300,
+        dead_ttl=3600,
+        cooldown_seconds=0,
+        consecutive_bad_to_switch=1,
+        on_switch_cmd=on_switch,
+        on_fail_cmd=on_fail,
+        max_iterations=max_iter,
+    )
+    d = Daemon(cfg, dcfg, sleep=lambda _: None, clock=lambda: 1000.0)
+    return d, fake_router
+
+
+def test_on_switch_hook_called_with_old_and_new_peer(pool: Path, cfg: Config) -> None:
+    """on_switch script receives old_peer new_peer as positional args."""
+    d, fake_router = _mk_daemon_with_hooks(cfg, pool, on_switch="/notify.sh", max_iter=1)
+
+    with (
+        mock.patch.object(daemon, "Router", return_value=fake_router),
+        mock.patch.object(daemon, "_apply_peer"),
+        mock.patch.object(daemon, "sample_counters", return_value=(100, 100, 10.0, True)),
+        mock.patch("openwrt_pbr_vpn.daemon.subprocess.run") as mock_run,
+    ):
+        state = d.run()
+
+    # Initial switch: old_peer is "" (none active before), new_peer is "peer0"
+    mock_run.assert_called_once_with(
+        ["/notify.sh", "", "peer0"],
+        timeout=10,
+        check=False,
+    )
+    assert state.current_peer == "peer0"
+
+
+def test_on_switch_hook_receives_old_and_new_on_peer_change(pool: Path, cfg: Config) -> None:
+    """When daemon switches from peer0 to peer1, on_switch gets ('peer0', 'peer1')."""
+    d, fake_router = _mk_daemon_with_hooks(cfg, pool, on_switch="/notify.sh", max_iter=2)
+
+    # tick 0: tx grew, rx flat → NO_DATA → mark peer0 dead, switch to peer1
+    # tick 1: sample after switch (healthy)
+    samples = iter(
+        [
+            (0, 5000, 10.0, True),   # NO_DATA → switch
+            (1000, 6000, 10.0, True),  # HEALTHY
+        ]
+    )
+
+    with (
+        mock.patch.object(daemon, "Router", return_value=fake_router),
+        mock.patch.object(daemon, "_apply_peer"),
+        mock.patch.object(daemon, "sample_counters", side_effect=lambda *_a: next(samples)),
+        mock.patch("openwrt_pbr_vpn.daemon.subprocess.run") as mock_run,
+    ):
+        state = d.run()
+
+    # Two calls: initial switch (""→"peer0") and forced switch ("peer0"→"peer1")
+    assert mock_run.call_count == 2
+    calls = mock_run.call_args_list
+    assert calls[0].args[0] == ["/notify.sh", "", "peer0"]
+    assert calls[1].args[0] == ["/notify.sh", "peer0", "peer1"]
+
+
+def test_on_fail_hook_called_with_dead_peer_name(pool: Path, cfg: Config) -> None:
+    """on_fail script receives the name of the peer that died."""
+    d, fake_router = _mk_daemon_with_hooks(cfg, pool, on_fail="/alert.sh", max_iter=2)
+
+    samples = iter(
+        [
+            (0, 5000, 10.0, True),   # NO_DATA → mark peer0 dead, switch
+            (1000, 6000, 10.0, True),  # HEALTHY on peer1
+        ]
+    )
+
+    with (
+        mock.patch.object(daemon, "Router", return_value=fake_router),
+        mock.patch.object(daemon, "_apply_peer"),
+        mock.patch.object(daemon, "sample_counters", side_effect=lambda *_a: next(samples)),
+        mock.patch("openwrt_pbr_vpn.daemon.subprocess.run") as mock_run,
+    ):
+        state = d.run()
+
+    # on_fail called once with the dead peer name
+    mock_run.assert_called_once_with(
+        ["/alert.sh", "peer0"],
+        timeout=10,
+        check=False,
+    )
+    assert "peer0" in state.dead
+
+
+def test_hook_error_does_not_crash_daemon(pool: Path, cfg: Config) -> None:
+    """If the hook script raises an exception, the daemon continues running."""
+    d, fake_router = _mk_daemon_with_hooks(cfg, pool, on_switch="/bad_script.sh", max_iter=1)
+
+    with (
+        mock.patch.object(daemon, "Router", return_value=fake_router),
+        mock.patch.object(daemon, "_apply_peer"),
+        mock.patch.object(daemon, "sample_counters", return_value=(100, 100, 10.0, True)),
+        mock.patch("openwrt_pbr_vpn.daemon.subprocess.run", side_effect=OSError("script not found")),
+    ):
+        # Must not raise; daemon completes normally
+        state = d.run()
+
+    assert state.current_peer == "peer0"
+
+
+def test_no_hook_called_when_not_configured(pool: Path, cfg: Config) -> None:
+    """When on_switch and on_fail are None, subprocess.run is never called."""
+    d, fake_router = _mk_daemon_with_hooks(cfg, pool, max_iter=1)
+
+    with (
+        mock.patch.object(daemon, "Router", return_value=fake_router),
+        mock.patch.object(daemon, "_apply_peer"),
+        mock.patch.object(daemon, "sample_counters", return_value=(100, 100, 10.0, True)),
+        mock.patch("openwrt_pbr_vpn.daemon.subprocess.run") as mock_run,
+    ):
+        d.run()
+
+    mock_run.assert_not_called()

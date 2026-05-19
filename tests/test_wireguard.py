@@ -1,10 +1,13 @@
-"""Tests for WireGuard .conf parsing."""
+"""Tests for WireGuard .conf parsing and probe data-channel detection."""
 
 from __future__ import annotations
+from unittest import mock
 
 import pytest
 
-from openwrt_pbr_vpn.wireguard import WgPeer
+from openwrt_pbr_vpn.config import Config
+from openwrt_pbr_vpn.router import CommandResult
+from openwrt_pbr_vpn.wireguard import WgPeer, probe
 
 SAMPLE = """
 [Interface]
@@ -119,3 +122,111 @@ Endpoint = [2001:db8::1]:51820
 """)
     assert p.endpoint_host == "2001:db8::1"
     assert p.endpoint_port == 51820
+
+
+# ---------------------------------------------------------------------------
+# probe() — data-channel detection via ping
+# ---------------------------------------------------------------------------
+
+_PING_SUCCESS = "PING 8.8.8.8: 3 packets transmitted, 3 received, 0% packet loss\n"
+_PING_ZERO_RX = "PING 8.8.8.8: 3 packets transmitted, 0 received, 100% packet loss\n"
+
+_SAMPLE_PEER = WgPeer(
+    address="10.0.0.1/32",
+    private_key="aaaa",
+    public_key="bbbb",
+    endpoint_host="1.2.3.4",
+    endpoint_port=51820,
+)
+
+
+def _ok(stdout: str = "", rc: int = 0) -> CommandResult:
+    return CommandResult(cmd="", rc=rc, stdout=stdout, stderr="")
+
+
+def _apply_run_calls(ok: bool = True, ping_stdout: str = _PING_SUCCESS, ping_rc: int = 0):
+    """Return the r.run() side-effect list for one probe iteration.
+
+    apply() makes 4 direct r.run() calls:
+      1. while uci -q delete network.@wireguard_<iface>[0]; do :; done
+      2. uci set network.<iface>=interface  (check=True)
+      3. uci add network wireguard_<iface>  (check=True)
+      4. /etc/init.d/network reload         (check=True)
+
+    probe() then adds:
+      5. ip route add 8.8.8.8/32 dev <iface>
+      6. ping -c 3 -W 6 -I <iface> 8.8.8.8
+      7. ip route del 8.8.8.8/32 dev <iface>  (finally)
+    """
+    return [
+        _ok(""),                        # wg peer wipe loop
+        _ok(""),                        # uci set interface
+        _ok(""),                        # uci add wireguard peer
+        _ok(""),                        # /etc/init.d/network reload
+        _ok(""),                        # ip route add
+        _ok(ping_stdout, ping_rc),      # ping
+        _ok(""),                        # ip route del
+    ]
+
+
+@pytest.fixture()
+def wg_cfg() -> Config:
+    return Config(host="10.0.0.1", user="root", password="x", vpn_interface="vpnclient")
+
+
+def test_wg_probe_returns_peer_when_ping_succeeds(wg_cfg) -> None:
+    r = mock.MagicMock()
+    r.run.side_effect = _apply_run_calls(ping_stdout=_PING_SUCCESS, ping_rc=0)
+
+    with mock.patch("openwrt_pbr_vpn.wireguard.time") as t:
+        t.sleep = mock.MagicMock()
+        result = probe(r, wg_cfg, [("Belgium", _SAMPLE_PEER)])
+
+    assert result is not None
+    assert result[0] == "Belgium"
+
+
+def test_wg_probe_skips_peer_when_ping_zero_received(wg_cfg) -> None:
+    r = mock.MagicMock()
+    r.run.side_effect = _apply_run_calls(ping_stdout=_PING_ZERO_RX, ping_rc=1)
+
+    with mock.patch("openwrt_pbr_vpn.wireguard.time") as t:
+        t.sleep = mock.MagicMock()
+        result = probe(r, wg_cfg, [("Belgium", _SAMPLE_PEER)])
+
+    assert result is None
+
+
+def test_wg_probe_skips_peer_when_ping_exits_nonzero(wg_cfg) -> None:
+    r = mock.MagicMock()
+    # ping exits 1 even though stdout looks like something received
+    r.run.side_effect = _apply_run_calls(ping_stdout="3 received", ping_rc=1)
+
+    with mock.patch("openwrt_pbr_vpn.wireguard.time") as t:
+        t.sleep = mock.MagicMock()
+        result = probe(r, wg_cfg, [("Belgium", _SAMPLE_PEER)])
+
+    assert result is None
+
+
+def test_wg_probe_returns_first_working_peer(wg_cfg) -> None:
+    """First peer fails ping; second succeeds — probe must return the second."""
+    dead_peer = WgPeer(
+        address="10.0.0.2/32",
+        private_key="cccc",
+        public_key="dddd",
+        endpoint_host="5.5.5.5",
+        endpoint_port=51820,
+    )
+    r = mock.MagicMock()
+    r.run.side_effect = (
+        _apply_run_calls(ping_stdout=_PING_ZERO_RX, ping_rc=1)
+        + _apply_run_calls(ping_stdout=_PING_SUCCESS, ping_rc=0)
+    )
+
+    with mock.patch("openwrt_pbr_vpn.wireguard.time") as t:
+        t.sleep = mock.MagicMock()
+        result = probe(r, wg_cfg, [("dead", dead_peer), ("good", _SAMPLE_PEER)])
+
+    assert result is not None
+    assert result[0] == "good"

@@ -104,6 +104,75 @@ def test_human_mode_falls_back_to_json_when_no_human_text(handler, capsys) -> No
     assert parsed == {"foo": "bar"}
 
 
+# ----- amnezia check -----
+
+
+def test_amnezia_check_subcommand_parses() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["amnezia", "check"])
+    assert args.cmd == "amnezia"
+    assert args.sub == "check"
+    assert args.func is cli.cmd_amnezia_check
+
+
+def test_amnezia_check_requires_sub() -> None:
+    parser = cli.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["amnezia"])
+
+
+@mock.patch(
+    "openwrt_pbr_vpn.cli.cmd_amnezia_check",
+    return_value=(
+        {
+            "available": False,
+            "arch": "mediatek/mt7622",
+            "kernel": "5.15.0",
+            "kmod_in_repo": False,
+            "tools_in_repo": False,
+            "kmod_installed": False,
+            "tools_installed": False,
+            "install_cmd": None,
+            "note": "kmod-amneziawg not available for 'mediatek/mt7622' in current repos.",
+        },
+        "AmneziaWG check  arch=mediatek/mt7622  kernel=5.15.0\n  [WARN] not available",
+    ),
+)
+def test_amnezia_check_json_output(handler, capsys) -> None:
+    rc = cli.main(["--json", "amnezia", "check"])
+    assert rc == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["available"] is False
+    assert parsed["arch"] == "mediatek/mt7622"
+    assert parsed["kmod_in_repo"] is False
+    assert "install_cmd" in parsed
+
+
+@mock.patch(
+    "openwrt_pbr_vpn.cli.cmd_amnezia_check",
+    return_value=(
+        {
+            "available": True,
+            "arch": "aarch64_cortex-a53",
+            "kernel": "6.1.0",
+            "kmod_in_repo": True,
+            "tools_in_repo": True,
+            "kmod_installed": False,
+            "tools_installed": False,
+            "install_cmd": "apk add kmod-amneziawg amneziawg-tools",
+            "note": "Available — install with: apk add kmod-amneziawg amneziawg-tools",
+        },
+        "AmneziaWG check  arch=aarch64_cortex-a53  kernel=6.1.0\n  [OK] Available",
+    ),
+)
+def test_amnezia_check_available_json(handler, capsys) -> None:
+    rc = cli.main(["--json", "amnezia", "check"])
+    assert rc == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["available"] is True
+    assert parsed["install_cmd"] == "apk add kmod-amneziawg amneziawg-tools"
+
+
 @mock.patch("openwrt_pbr_vpn.cli.cmd_update")
 def test_json_flag_silences_info_logs(handler, capsys) -> None:
     """--json sets quiet=True so progress logs don't pollute stderr."""

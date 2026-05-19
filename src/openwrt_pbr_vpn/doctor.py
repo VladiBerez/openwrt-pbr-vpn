@@ -6,6 +6,7 @@ and reports each as PASS/WARN/FAIL with an actionable suggestion.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
@@ -205,6 +206,77 @@ def _check_routes_table(r: Router, cfg: Config) -> Check:
     )
 
 
+# Threshold constants for ТСПУ detection
+_TSPU_TX_RX_RATIO = 100  # TX must be >100x RX
+_TSPU_TX_MIN_BYTES = 50 * 1024  # TX must exceed 50 KB
+
+
+def _parse_wg_transfer(wg_raw: str) -> tuple[int, int]:
+    """Return (rx_bytes, tx_bytes) from `wg show` output; both 0 if not found."""
+    m = re.search(
+        r"transfer:\s+([\d.]+)\s+(\w+)\s+received,\s+([\d.]+)\s+(\w+)\s+sent",
+        wg_raw,
+    )
+    if not m:
+        return 0, 0
+    units = {"B": 1, "KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "TiB": 1024**4}
+    rx = int(float(m.group(1)) * units.get(m.group(2), 1))
+    tx = int(float(m.group(3)) * units.get(m.group(4), 1))
+    return rx, tx
+
+
+def _check_tspu_data_channel(r: Router, cfg: Config) -> Check:
+    """Detect the Russian ТСПУ (DPI) pattern: handshake OK but RX ~0 while TX grows."""
+    wg_raw = r.run(f"wg show {cfg.vpn_interface} 2>&1").stdout
+
+    if "interface:" not in wg_raw:
+        # WireGuard not active — skip this check
+        return Check(
+            "tspu_data_channel",
+            "pass",
+            "WireGuard not active — ТСПУ check skipped",
+        )
+
+    has_handshake = "latest handshake:" in wg_raw
+    if not has_handshake:
+        return Check(
+            "tspu_data_channel",
+            "pass",
+            "No WireGuard handshake yet — ТСПУ check not applicable",
+        )
+
+    rx_bytes, tx_bytes = _parse_wg_transfer(wg_raw)
+    tx_kb = tx_bytes // 1024
+    rx_kb = rx_bytes // 1024
+
+    suspicious = (tx_bytes > _TSPU_TX_MIN_BYTES and rx_bytes == 0) or (
+        rx_bytes > 0
+        and tx_bytes > _TSPU_TX_RX_RATIO * rx_bytes
+        and tx_bytes > _TSPU_TX_MIN_BYTES
+    )
+
+    if suspicious:
+        return Check(
+            "tspu_data_channel",
+            "warn",
+            (
+                f"VPN data channel may be blocked by ТСПУ (DPI): "
+                f"TX={tx_kb}KB, RX={rx_kb}KB — asymmetric traffic pattern. "
+                "Handshake passes but reply traffic is dropped."
+            ),
+            (
+                "Run 'ovpn-pbr wg probe --dir ./vpn-pool/' to find a working endpoint, "
+                "or try ROUTERS-tagged servers from your provider."
+            ),
+        )
+
+    return Check(
+        "tspu_data_channel",
+        "pass",
+        f"Data channel traffic looks normal: TX={tx_kb}KB, RX={rx_kb}KB",
+    )
+
+
 CHECKS: list[Callable[..., Check]] = [
     _check_ssh,
     _check_pbr_package,
@@ -215,6 +287,7 @@ CHECKS: list[Callable[..., Check]] = [
     _check_wan_reach,
     _check_strict_enforcement,
     _check_routes_table,
+    _check_tspu_data_channel,
 ]
 
 

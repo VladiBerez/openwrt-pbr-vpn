@@ -249,6 +249,71 @@ def test_format_human_renders_with_icons():
     assert "→ do y" in text
 
 
+# ----- ТСПУ data-channel check -----
+
+
+_WG_SHOW_ACTIVE = (
+    "interface: vpnclient\n"
+    "  public key: abc123\n"
+    "peer: xyz789\n"
+    "  endpoint: 1.2.3.4:51820\n"
+    "  latest handshake: 1 minute, 12 seconds ago\n"
+    "  transfer: {rx_val} {rx_unit} received, {tx_val} {tx_unit} sent\n"
+)
+
+
+def _wg_show_result(rx_val, rx_unit, tx_val, tx_unit):
+    text = _WG_SHOW_ACTIVE.format(
+        rx_val=rx_val, rx_unit=rx_unit, tx_val=tx_val, tx_unit=tx_unit
+    )
+    return CommandResult("wg show", 0, text, "")
+
+
+def test_tspu_check_pass_when_wg_not_active(cfg):
+    r = _mk_router({"wg show": CommandResult("wg show", 0, "error: No such device", "")})
+    c = doctor._check_tspu_data_channel(r, cfg)
+    assert c.status == "pass"
+    assert "not active" in c.detail.lower() or "skipped" in c.detail.lower()
+
+
+def test_tspu_check_pass_when_no_handshake(cfg):
+    wg_no_hs = "interface: vpnclient\npeer: xyz\n  endpoint: 1.2.3.4:51820\n"
+    r = _mk_router({"wg show": CommandResult("wg show", 0, wg_no_hs, "")})
+    c = doctor._check_tspu_data_channel(r, cfg)
+    assert c.status == "pass"
+
+
+def test_tspu_check_warn_when_tx_high_rx_zero(cfg):
+    # TX=200KB RX=0 — classic ТСПУ pattern
+    r = _mk_router({"wg show": _wg_show_result(0, "B", 200, "KiB")})
+    c = doctor._check_tspu_data_channel(r, cfg)
+    assert c.status == "warn"
+    assert "ТСПУ" in c.detail
+    assert c.fix is not None
+    assert "probe" in c.fix
+
+
+def test_tspu_check_warn_when_tx_100x_rx(cfg):
+    # TX=200KB RX=1KB  → ratio=200 > 100 and TX>50KB
+    r = _mk_router({"wg show": _wg_show_result(1, "KiB", 200, "KiB")})
+    c = doctor._check_tspu_data_channel(r, cfg)
+    assert c.status == "warn"
+
+
+def test_tspu_check_pass_when_traffic_balanced(cfg):
+    # TX=100KB RX=80KB — normal bidirectional traffic
+    r = _mk_router({"wg show": _wg_show_result(80, "KiB", 100, "KiB")})
+    c = doctor._check_tspu_data_channel(r, cfg)
+    assert c.status == "pass"
+
+
+def test_tspu_check_pass_when_tx_below_threshold(cfg):
+    # TX=10KB RX=0 — too early to tell; don't false-alarm
+    r = _mk_router({"wg show": _wg_show_result(0, "B", 10, "KiB")})
+    c = doctor._check_tspu_data_channel(r, cfg)
+    assert c.status == "pass"
+
+
 # ----- exception inside a check is captured, not propagated -----
 
 

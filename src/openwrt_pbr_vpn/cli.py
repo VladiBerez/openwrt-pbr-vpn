@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import daemon, diagnose, doctor, keys, openvpn, routes, wireguard
+from . import amnezia, daemon, diagnose, doctor, keys, openvpn, routes, wireguard
 from .config import Config, load_config
 from .output import emit_result, setup_logging
 from .router import Router
@@ -91,7 +91,7 @@ def cmd_wg_show(args) -> tuple[dict, str]:
 
 def cmd_wg_probe(args) -> tuple[dict, str]:
     cfg = _load(args)
-    files = sorted(Path(args.dir).glob("*.conf"))
+    files = sorted(Path(args.dir).glob("*.conf"), key=wireguard._probe_sort_key)
     if not files:
         raise FileNotFoundError(f"No .conf files in {args.dir}")
     peers = [(p.stem, wireguard.WgPeer.from_file(p)) for p in files]
@@ -123,7 +123,7 @@ def cmd_ovpn_set(args) -> tuple[dict, str]:
 
 def cmd_ovpn_probe(args) -> tuple[dict, str]:
     cfg = _load(args)
-    files = sorted(Path(args.dir).glob("*.ovpn"))
+    files = sorted(Path(args.dir).glob("*.ovpn"), key=openvpn._probe_sort_key)
     if not files:
         raise FileNotFoundError(f"No .ovpn files in {args.dir}")
     profiles = [(p.stem.replace(" ", "_").replace(",", ""), p) for p in files]
@@ -156,6 +156,12 @@ def cmd_killswitch_on(args) -> tuple[dict, str]:
     cfg = _load(args)
     result = diagnose.enable_killswitch(cfg)
     return result, "✓ strict_enforcement=1"
+
+
+def cmd_amnezia_check(args) -> tuple[dict, str]:
+    cfg = _load(args)
+    result = amnezia.check(cfg)
+    return result, amnezia.format_human(result)
 
 
 def cmd_daemon(args) -> tuple[dict, str]:
@@ -299,8 +305,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help="Consecutive bad ticks before switching peers (default 3)",
     )
-    s_daemon.add_argument("--on-switch", help="Shell command run with new peer name as $1")
-    s_daemon.add_argument("--on-fail", help="Shell command run with failed peer name as $1")
+    s_daemon.add_argument(
+        "--on-switch",
+        help="Script called on endpoint switch: receives old_endpoint new_endpoint as $1 $2",
+    )
+    s_daemon.add_argument(
+        "--on-fail",
+        help="Script called when a peer is marked dead: receives failed_peer_name as $1",
+    )
     s_daemon.add_argument(
         "--max-iterations",
         type=int,
@@ -325,6 +337,13 @@ def build_parser() -> argparse.ArgumentParser:
         func=cmd_keys_store
     )
     sk.add_parser("test", help="Verify current credentials work").set_defaults(func=cmd_keys_test)
+
+    s_amnezia = sub.add_parser("amnezia", help="AmneziaWG availability checks")
+    sa = s_amnezia.add_subparsers(dest="sub", required=True)
+    sa.add_parser(
+        "check",
+        help="Check whether kmod-amneziawg is available for this router's arch/kernel",
+    ).set_defaults(func=cmd_amnezia_check)
 
     return p
 

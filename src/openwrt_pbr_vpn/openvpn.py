@@ -18,6 +18,14 @@ from .router import Router
 
 log = get_logger("openvpn")
 
+
+def _probe_sort_key(path: Path) -> tuple[int, str]:
+    """Sort key that puts ROUTERS-tagged files first, then alphabetical."""
+    name = path.stem.upper()
+    priority = 0 if "ROUTERS" in name else 1
+    return (priority, path.name)
+
+
 SPLIT_TUNNEL_BLOCK = """
 # === split-tunnel additions (managed by openwrt-pbr-vpn) ===
 route-nopull
@@ -121,14 +129,19 @@ def probe(
         if not wait_for_tun(r, timeout=handshake_timeout):
             log.info(f"  {name}: tun0 never came up")
             continue
-        r.run("ip route add 1.1.1.1/32 dev tun0 2>/dev/null || true")
+        r.run("ip route add 8.8.8.8/32 dev tun0 2>/dev/null || true")
         try:
-            res = r.run("ping -c 3 -W 3 1.1.1.1 | tail -1")
-            if "0 received" in res.stdout or "0 packets received" in res.stdout:
+            res = r.run("ping -c 3 -W 6 -I tun0 8.8.8.8")
+            data_ok = res.rc == 0 and (
+                " received" in res.stdout
+                and "0 received" not in res.stdout
+                and "0 packets received" not in res.stdout
+            )
+            if not data_ok:
                 log.info(f"  {name}: tun0 up but data channel dead")
                 continue
             log.info(f"  *** {name} WORKS ***")
             return name, path
         finally:
-            r.run("ip route del 1.1.1.1/32 dev tun0 2>/dev/null || true")
+            r.run("ip route del 8.8.8.8/32 dev tun0 2>/dev/null || true")
     return None

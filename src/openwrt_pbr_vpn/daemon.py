@@ -140,12 +140,16 @@ def _parse_handshake_age(text: str) -> float | None:
     return max(0.0, time.time() - ts)
 
 
-def _run_hook(cmd: str | None, peer_name: str) -> None:
+def _run_hook(cmd: str | None, *args: str) -> None:
+    """Run a hook script non-blocking with the given positional arguments.
+
+    Errors from hook scripts are logged but never crash the daemon.
+    """
     if not cmd:
         return
     try:
         subprocess.run(
-            [*shlex.split(cmd), peer_name],
+            [*shlex.split(cmd), *args],
             timeout=10,
             check=False,
         )
@@ -260,6 +264,7 @@ class Daemon:
             entry.peer.endpoint_host,
             entry.peer.endpoint_port,
         )
+        old_peer = self.state.current_peer or ""
         _apply_peer(r, self.cfg, entry.peer)
         self.state.current_peer = entry.name
         self.state.last_rx = 0
@@ -267,7 +272,7 @@ class Daemon:
         self.state.last_change_ts = self._clock()
         self.state.last_health = Health.UNKNOWN
         self._bad_streak = 0
-        _run_hook(self.dcfg.on_switch_cmd, entry.name)
+        _run_hook(self.dcfg.on_switch_cmd, old_peer, entry.name)
 
     def _tick(self, r: Router, pool: list[PeerEntry]) -> None:
         if self.state.current_peer is None:

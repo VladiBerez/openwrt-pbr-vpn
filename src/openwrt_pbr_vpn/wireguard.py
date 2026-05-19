@@ -14,6 +14,13 @@ from .router import Router
 log = get_logger("wireguard")
 
 
+def _probe_sort_key(path: Path) -> tuple[int, str]:
+    """Sort key that puts ROUTERS-tagged files first, then alphabetical."""
+    name = path.stem.upper()
+    priority = 0 if "ROUTERS" in name else 1
+    return (priority, path.name)
+
+
 @dataclass
 class WgPeer:
     address: str  # e.g. "10.103.248.74/32"
@@ -130,34 +137,32 @@ def probe(
     peers: list[tuple[str, WgPeer]],
     *,
     handshake_timeout: int = 30,
-    traffic_test_seconds: int = 10,
-    rx_threshold: int = 5000,
 ) -> tuple[str, WgPeer] | None:
     """Cycle through (name, WgPeer) candidates, return the first that passes.
 
-    Pass criteria: handshake reached AND rx_bytes > rx_threshold after
-    sending some test traffic. This catches the "tunnel up, RX=0" DPI case.
+    Pass criteria: ping -c 3 -W 6 -I <vpn_interface> 8.8.8.8 exits 0 and
+    reports at least one packet received.  We do NOT rely on wg RX counters
+    because under ТСПУ/DPI the device can forward traffic while the kernel
+    RX counter stays near zero.
     """
+    iface = cfg.vpn_interface
     for name, peer in peers:
         log.info(f"\n--- probing {name} ({peer.endpoint_host}:{peer.endpoint_port}) ---")
         apply(r, cfg, peer)
         time.sleep(4)
 
-        # Force traffic through the interface to trigger handshake.
-        r.run(f"ip route add 1.1.1.1/32 dev {cfg.vpn_interface} 2>/dev/null || true")
+        r.run(f"ip route add 8.8.8.8/32 dev {iface} 2>/dev/null || true")
         try:
-            elapsed = 0
-            while elapsed < traffic_test_seconds:
-                r.run(f"ping -c 1 -W 1 -I {cfg.vpn_interface} 1.1.1.1 >/dev/null 2>&1")
-                elapsed += 1
-                time.sleep(1)
-            time.sleep(2)
-            rx, tx = transfer_counters(r, cfg)
-            log.info(f"  rx={rx} tx={tx} bytes")
-            if rx > rx_threshold:
+            res = r.run(f"ping -c 3 -W 6 -I {iface} 8.8.8.8")
+            data_ok = res.rc == 0 and (
+                " received" in res.stdout
+                and "0 received" not in res.stdout
+                and "0 packets received" not in res.stdout
+            )
+            if data_ok:
                 log.info(f"  *** {name} WORKS — data channel alive ***")
                 return name, peer
             log.info(f"  {name} dead (no reply traffic)")
         finally:
-            r.run(f"ip route del 1.1.1.1/32 dev {cfg.vpn_interface} 2>/dev/null || true")
+            r.run(f"ip route del 8.8.8.8/32 dev {iface} 2>/dev/null || true")
     return None

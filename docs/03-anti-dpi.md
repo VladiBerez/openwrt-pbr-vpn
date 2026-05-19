@@ -62,11 +62,12 @@ The probe applies each config, generates a few seconds of test traffic, and only
 
 ## 4. What doesn't help (don't waste time)
 
-- ❌ Switching country (Croatia → Germany → Estonia → USA) — usually all blocked alike when DPI is active.
-- ❌ Switching OpenVPN obfuscation between `Without obfuscation` / `tls-crypt` / `tls-crypt-v2` — all detectable.
+- ❌ Switching country on **regular** endpoints (S1/S2/H12 etc.) — usually all blocked alike when DPI is active.
+- ❌ Switching OpenVPN obfuscation (`Without obfuscation` / `tls-crypt` / `tls-crypt-v2`) on **regular** endpoints — the data channel is still detectable. `tls-crypt-v2` obfuscates the control channel only; `P_DATA_V2` packets remain fingerprinted.
 - ❌ UDP → TCP — same protocol fingerprint, same fate.
 - ❌ MTU tuning (1280, 1400, 1420) — DPI doesn't care about packet size.
 - ❌ Restarting the router / VPN service.
+- ❌ Using `ip -s link show tun0 RX` as a data-flow test — **this counter is always 0 for TUN devices** even when data flows fine. Use `ping -I tun0` or OpenVPN `status` file (`TUN/TAP write bytes`) instead.
 
 ---
 
@@ -74,14 +75,25 @@ The probe applies each config, generates a few seconds of test traffic, and only
 
 In order of effort vs. payoff:
 
-### A. Wait it out
+### A. Wait it out + look for ROUTERS-tagged endpoints
 
 VPN providers (HideMyName, Mullvad, etc.) usually roll new endpoints within 24–48 hours. Subscribe to their status channel and re-download `.conf` files when they announce fixes.
 
-The router config doesn't need to change — just swap the peer:
+**HideMyName-specific:** when standard servers are blocked, look for **`ROUTERS`-tagged servers** in the download page (e.g. `Belgium, Brussels ROUTERS6`, `Croatia, Zagreb ROUTERS3`, `Moldova, Chisinau ROUTERS2`). These are dedicated router-facing endpoints with different routing paths. Confirmed working on 19 May 2026 when all S1/S2/H12 endpoints were dead:
+
+| Server | Port | tls-crypt-v2 | Ping |
+|---|---|---|---|
+| Belgium, Brussels ROUTERS6 | 58989 | ✓ | 79ms 0% loss |
+| Croatia, Zagreb ROUTERS3 | 56752 | ✓ | 91ms |
+| Moldova, Chisinau ROUTERS2 | 60101 | ✓ | 116ms |
+
+Download the `tls-crypt-v2 (OpenVPN 2.5+)` pack from your HideMyName account. OpenWrt ships OpenVPN **2.6.x** which supports it.
+
+Swap the config:
 
 ```bash
-ovpn-pbr wg set --config new-peer.conf
+ovpn-pbr ovpn probe --dir ./vpn-pool/   # finds the first working config
+ovpn-pbr ovpn set --config <winner>.ovpn
 ```
 
 ### B. Cloudflare WARP via `wgcf`
@@ -118,8 +130,10 @@ The router needs `xray-core` running as a SOCKS5/HTTP front-end with a VLESS out
 
 A Russian project specifically built for ТСПУ evasion. They offer:
 
-- **AmneziaWG** — WireGuard with `Junk` packets prepended to handshake (Wireshark sees random UDP, not WG). Requires `amneziawg-tools` and `kmod-amneziawg` on the router — **not** in stock OpenWrt 25.x feeds yet.
+- **AmneziaWG** — WireGuard with `Junk` packets prepended to handshake (Wireshark sees random UDP, not WG). Requires `amneziawg-tools` and `kmod-amneziawg` on the router.
 - **OpenVPN over Cloak** — OpenVPN wrapped in fake-TLS that looks like HTTPS to a real website.
+
+**Router availability (as of May 2026):** `amneziawg-tools` pre-built `.apk` packages exist for most architectures (via [Slava-Shchipunov/awg-openwrt](https://github.com/Slava-Shchipunov/awg-openwrt) releases). However **`kmod-amneziawg` is not available** for `mediatek/mt7622` (and several other targets) — must be compiled from source against the exact kernel version. Without the kernel module, the tools do nothing. Standard WireGuard without AmneziaWG obfuscation: handshake sometimes passes, but ТСПУ kills the data channel within seconds.
 
 Self-hosted on a $3 VPS. Setup via their desktop app (which generates server-side config and client URIs).
 
