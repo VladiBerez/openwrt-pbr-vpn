@@ -149,6 +149,29 @@ class Router:
         self.run(f"uci commit {package}", check=True)
 
     # ------------------------------------------------------------------
+    # Streaming
+    # ------------------------------------------------------------------
+    def stream(self, cmd: str) -> None:
+        """Execute *cmd* on the router and stream its stdout line-by-line to
+        sys.stdout.  Runs until the remote process exits or until a
+        KeyboardInterrupt, which closes the channel cleanly."""
+        import sys
+
+        _, stdout, _ = self.client.exec_command(cmd, get_pty=False)
+        _.close()  # stdin not needed
+        try:
+            for line in stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            try:
+                stdout.channel.close()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
     # Backups
     # ------------------------------------------------------------------
     def backup(self, remote_paths: list[str]) -> str:

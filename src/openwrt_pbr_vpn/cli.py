@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -227,6 +228,15 @@ def cmd_keys_test(args) -> tuple[dict, str]:
         return {"host": cfg.host, "ok": False, "error": str(e)}, f"✗ {e}"
 
 
+def cmd_logs(args) -> None:
+    cfg = _load(args)
+    cmd = "logread -f" if args.follow else f"logread -n {args.lines}"
+    if args.filter:
+        cmd += f" | grep -i {shlex.quote(args.filter)}"
+    with Router(cfg) as r:
+        r.stream(cmd)
+
+
 def cmd_xray_install(args) -> tuple[dict, str]:
     cfg = _load(args)
     with Router(cfg) as r:
@@ -414,6 +424,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="uTLS fingerprint (default: chrome)",
     )
     a.set_defaults(func=cmd_xray_install)
+
+    s_logs = sub.add_parser("logs", help="Stream router log output (logread)")
+    s_logs.add_argument("--follow", "-f", action="store_true", help="Follow log (logread -f)")
+    s_logs.add_argument("--lines", "-n", type=int, default=50, help="Lines to show (default 50)")
+    s_logs.add_argument("--filter", help="Case-insensitive grep filter")
+    s_logs.set_defaults(func=cmd_logs)
 
     return p
 
