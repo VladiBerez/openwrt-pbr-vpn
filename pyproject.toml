@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openwrt-pbr-vpn"
-version = "0.1.0"
-description = "Automated split-tunnel VPN management for OpenWrt (PBR + OpenVPN/WireGuard) with DoH-based IP discovery for blocked services"
+version = "0.4.2"
+description = "Automated split-tunnel VPN management for OpenWrt (PBR + OpenVPN/WireGuard) with DoH-based IP discovery, DPI-bypass probing, and daemon auto-switching"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "openwrt-pbr-vpn contributors" }]
-keywords = ["openwrt", "vpn", "pbr", "wireguard", "openvpn", "split-tunnel", "doh"]
+keywords = ["openwrt", "vpn", "pbr", "wireguard", "openvpn", "split-tunnel", "doh", "dpi", "amneziawg", "xray", "warp"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
@@ -42,9 +42,9 @@ dev = [
 ovpn-pbr = "openwrt_pbr_vpn.cli:main"
 
 [project.urls]
-Documentation = "https://github.com/your-org/openwrt-pbr-vpn/blob/main/docs/"
-Issues = "https://github.com/your-org/openwrt-pbr-vpn/issues"
-Source = "https://github.com/your-org/openwrt-pbr-vpn"
+Documentation = "https://github.com/VladiBerez/openwrt-pbr-vpn/blob/main/docs/"
+Issues = "https://github.com/VladiBerez/openwrt-pbr-vpn/issues"
+Source = "https://github.com/VladiBerez/openwrt-pbr-vpn"
 
 [tool.setuptools.packages.find]
 where = ["src"]

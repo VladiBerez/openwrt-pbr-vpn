@@ -18,6 +18,8 @@ ovpn-pbr routes rm  <CIDR>...      # removals
 ovpn-pbr wg set --config peer.conf       # apply a WireGuard peer to vpnclient
 ovpn-pbr wg show                          # current peer state
 ovpn-pbr wg probe --dir ./configs/        # find a peer that survives DPI
+ovpn-pbr wg probe --dir ./configs/ --stream  # same, but emit NDJSON as each result arrives
+ovpn-pbr wg warp                          # register Cloudflare WARP account and apply as vpnclient
 
 ovpn-pbr ovpn set --config x.ovpn         # install + patch + restart
 ovpn-pbr ovpn probe --dir ./configs/      # find a profile that survives DPI
@@ -25,6 +27,12 @@ ovpn-pbr ovpn probe --dir ./configs/      # find a profile that survives DPI
 ovpn-pbr diagnose                  # tun state, PBR, set size, ping tests
 ovpn-pbr emergency-off             # drop kill-switch, stop VPN (restore WAN)
 ovpn-pbr killswitch-on             # re-enable strict_enforcement
+
+ovpn-pbr logs                      # last 50 lines of router logread
+ovpn-pbr logs -f                   # continuous tail (follow)
+ovpn-pbr logs --lines 100 --filter ovpn-pbr  # last 100 lines, filtered
+
+ovpn-pbr daemon                    # auto-switching watchdog (re-probes on failure)
 
 ovpn-pbr keys install              # generate ed25519 + push to router (passwordless from now on)
 ovpn-pbr keys store                # save router password in OS keyring
@@ -257,3 +265,127 @@ Tests for the UI:
 cd openwrt-pbr-vpn-ui
 npm test           # vitest — 142 tests, ~2.4s
 ```
+
+---
+
+## 11. Cloudflare WARP (`ovpn-pbr wg warp`)
+
+Sets up Cloudflare WARP as the VPN interface in one command, entirely from the workstation:
+
+```bash
+ovpn-pbr wg warp
+```
+
+What it does:
+
+1. Downloads the `wgcf` binary onto the router (from GitHub releases).
+2. Runs `wgcf register && wgcf generate` on the router to create a free WARP account and generate a WireGuard config.
+3. Parses the resulting config and applies it to `vpnclient` via `ovpn-pbr wg set` (same flow as any other peer — `route_allowed_ips='0'`, split-tunnel preserved).
+
+No server to rent or maintain. The WARP free tier is sufficient for most use cases.
+
+### `--wgcf-url` flag
+
+By default, `warp` downloads the MIPS build of `wgcf` (the common OpenWrt router architecture). For other architectures, override the URL:
+
+```bash
+# arm64 router (e.g. Raspberry Pi running OpenWrt):
+ovpn-pbr wg warp --wgcf-url https://github.com/ViRb3/wgcf/releases/latest/download/wgcf_linux_arm64
+```
+
+Check the [wgcf releases page](https://github.com/ViRb3/wgcf/releases) for all available builds (x86_64, arm, arm64, mips, mipsle, …).
+
+---
+
+## 12. Probe streaming mode (`ovpn-pbr wg probe --stream`)
+
+By default, `wg probe` prints a summary table when all endpoints have been tested. With `--stream`, it emits one NDJSON line per endpoint **as soon as that endpoint's test finishes** — useful for scripting or for piping results into the Web UI's SSE endpoint.
+
+```bash
+ovpn-pbr wg probe --dir ./pool/ --stream | jq .
+```
+
+Example output (one line per endpoint, in arrival order):
+
+```json
+{"config": "pool/finland.conf",  "passed": false, "rx_bytes": 0,     "latency_ms": null}
+{"config": "pool/moldova.conf",  "passed": true,  "rx_bytes": 14200, "latency_ms": 118}
+{"config": "pool/belgium.conf",  "passed": true,  "rx_bytes": 9800,  "latency_ms": 79}
+```
+
+The Web UI's `/api/probe` route consumes this stream and forwards it as Server-Sent Events so the browser table updates in real time.
+
+---
+
+## 13. Router log streaming (`ovpn-pbr logs`)
+
+Streams `logread` output from the router.
+
+```bash
+ovpn-pbr logs                        # last 50 lines (default)
+ovpn-pbr logs --lines 200            # last N lines
+ovpn-pbr logs -f                     # continuous tail (follow), Ctrl-C to stop
+ovpn-pbr logs --follow               # same as -f
+ovpn-pbr logs -f --filter ovpn-pbr  # follow + grep for a pattern
+```
+
+`--filter PATTERN` runs `logread | grep PATTERN` (or `logread -f | grep PATTERN` in follow mode) on the router side, so only matching lines are sent over SSH. Useful for watching PBR restarts or WireGuard handshake events without the noise of other daemons.
+
+---
+
+## 14. Daemon / auto-switching watchdog (`ovpn-pbr daemon`)
+
+The daemon watches the active VPN tunnel and automatically switches to a working endpoint when the current one fails.
+
+```bash
+# Minimal invocation (pool in ./vpn-pool/, checks every 60 s):
+ovpn-pbr daemon --dir ./vpn-pool/
+
+# Tune the check interval and hook:
+ovpn-pbr daemon --dir ./vpn-pool/ --interval 30 --on-switch "notify-send 'VPN switched to {config}'"
+```
+
+Key flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--dir PATH` | `./vpn-pool/` | Directory of `.conf` files to cycle through |
+| `--interval N` | `60` | Seconds between health checks |
+| `--on-switch CMD` | _(none)_ | Shell command to run after a successful switch; `{config}` is replaced with the new config path |
+
+### `--on-switch` hook
+
+The hook runs on the **workstation** after the daemon applies a new endpoint. Use it for notifications, logging, or updating a status file:
+
+```bash
+--on-switch "echo '{config}' >> ~/vpn-switches.log"
+--on-switch "curl -s -X POST https://ntfy.sh/my-topic -d 'Switched to {config}'"
+```
+
+### Running as a systemd service (Linux workstation)
+
+If you want the daemon to survive reboots and run headlessly, create a systemd user unit:
+
+```ini
+# ~/.config/systemd/user/ovpn-pbr-daemon.service
+[Unit]
+Description=ovpn-pbr auto-switching daemon
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ovpn-pbr daemon --dir /home/user/vpn-pool/ --interval 60
+Restart=on-failure
+RestartSec=10
+WorkingDirectory=/home/user/openwrt-pbr-vpn
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now ovpn-pbr-daemon
+journalctl --user -u ovpn-pbr-daemon -f
+```
+
+The daemon reads router credentials from the same `.env` / SSH key as the CLI, so no extra configuration is needed.

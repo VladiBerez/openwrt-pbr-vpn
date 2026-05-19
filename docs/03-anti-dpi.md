@@ -98,14 +98,30 @@ ovpn-pbr ovpn set --config <winner>.ovpn
 
 ### B. Cloudflare WARP via `wgcf`
 
+The easiest path is the `warp` subcommand, which handles everything from the workstation:
+
+```bash
+ovpn-pbr wg warp
+```
+
+This downloads `wgcf` onto the router, registers a free WARP account, generates a WireGuard config, and applies it as `vpnclient` — all in one step. No manual SSH session needed. For non-MIPS routers, pass the correct binary URL:
+
+```bash
+# arm64 (Raspberry Pi, some newer routers):
+ovpn-pbr wg warp --wgcf-url https://github.com/ViRb3/wgcf/releases/latest/download/wgcf_linux_arm64
+```
+
+If you prefer to do it manually on the router:
+
 ```sh
-# On the router:
 apk add wgcf
 wgcf register
 wgcf generate
+# Then copy the resulting wgcf-profile.conf to the workstation and:
+ovpn-pbr wg set --config wgcf-profile.conf
 ```
 
-This produces a standard WireGuard `.conf` pointing at Cloudflare's `engage.cloudflareclient.com` endpoint. Cloudflare's IPs sometimes survive ТСПУ heuristics better than commercial VPN providers because their fingerprint is different. ~50% success rate. Free.
+Why WARP sometimes works when regular VPNs don't: WARP sends WireGuard traffic to Cloudflare infrastructure on **UDP port 2408**. This port and Cloudflare's IP ranges are often treated differently by ТСПУ heuristics (Cloudflare powers half the internet; blanket-blocking it has collateral damage). The WireGuard fingerprint is also subtly different from a typical VPN peer. ~50% success rate. Free tier is sufficient for most routing use cases.
 
 ### C. Xray VLESS + Reality (most robust)
 
@@ -114,17 +130,55 @@ Reality is the current state-of-the-art for evading ТСПУ. The trick: client 
 Requirements:
 
 - A VPS outside Russia ($3–5/month is plenty)
-- `xray-core` on the router (`apk add xray-core`)
 - A Reality server (3X-UI is the easy GUI)
+- The `ovpn-pbr xray install` command handles the router side
 
-Quick server setup (on the VPS, Debian/Ubuntu):
+#### Automated install
+
+```bash
+ovpn-pbr xray install --server YOUR_VPS_IP --uuid YOUR_UUID
+```
+
+This:
+
+1. Downloads the `xray-core` binary onto the router.
+2. Writes a VLESS+Reality client config with a **SOCKS5 inbound on `127.0.0.1:1080`**.
+3. Registers a `procd` init service so Xray starts on boot and restarts on crash.
+
+Additional flags you may need to match your server's Reality settings:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sni DOMAIN` | `www.microsoft.com` | The "decoy" domain Reality impersonates |
+| `--public-key KEY` | _(required if non-default)_ | Reality server public key |
+| `--short-id ID` | _(required if non-default)_ | Reality short ID |
+| `--fingerprint FP` | `chrome` | TLS client fingerprint (`chrome`, `firefox`, `safari`, `ios`, `random`) |
+
+Example with all flags:
+
+```bash
+ovpn-pbr xray install \
+  --server 185.100.200.50 \
+  --uuid xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --public-key AbCdEfGh123456... \
+  --short-id 0123abcd \
+  --sni www.microsoft.com \
+  --fingerprint chrome
+```
+
+#### Why Reality works
+
+Reality mimics the TLS handshake of a real website (default: `www.microsoft.com`). From the DPI perspective, the packet stream is indistinguishable from a normal HTTPS session to Microsoft. The actual VLESS payload is tunnelled inside that TLS session using the user's UUID as an authentication token. No server certificate to detect, no unusual port patterns — the traffic fingerprint matches a browser visiting a popular site.
+
+#### Server setup (VPS)
 
 ```sh
 bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh)
-# Through the web panel, create a VLESS+Reality user. Save the generated client URI.
+# Through the web panel, create a VLESS+Reality inbound. Copy the UUID, public key, and short ID.
+# Then run ovpn-pbr xray install with those values.
 ```
 
-The router needs `xray-core` running as a SOCKS5/HTTP front-end with a VLESS outbound; configure PBR to route via the resulting proxy. Out of scope for this playbook — see [3X-UI docs](https://github.com/MHSanaei/3x-ui).
+See [3X-UI docs](https://github.com/MHSanaei/3x-ui) and [Reality protocol spec](https://github.com/XTLS/REALITY) for server-side configuration details.
 
 ### D. AmneziaVPN
 
@@ -133,7 +187,23 @@ A Russian project specifically built for ТСПУ evasion. They offer:
 - **AmneziaWG** — WireGuard with `Junk` packets prepended to handshake (Wireshark sees random UDP, not WG). Requires `amneziawg-tools` and `kmod-amneziawg` on the router.
 - **OpenVPN over Cloak** — OpenVPN wrapped in fake-TLS that looks like HTTPS to a real website.
 
-**Router availability (as of May 2026):** `amneziawg-tools` pre-built `.apk` packages exist for most architectures (via [Slava-Shchipunov/awg-openwrt](https://github.com/Slava-Shchipunov/awg-openwrt) releases). However **`kmod-amneziawg` is not available** for `mediatek/mt7622` (and several other targets) — must be compiled from source against the exact kernel version. Without the kernel module, the tools do nothing. Standard WireGuard without AmneziaWG obfuscation: handshake sometimes passes, but ТСПУ kills the data channel within seconds.
+#### Checking kernel module availability before installing
+
+The most common failure point is `kmod-amneziawg` not being available for your router's architecture/kernel combination. Check before attempting an install:
+
+```bash
+ovpn-pbr amnezia check
+```
+
+This queries the relevant APK repositories for your router's exact arch and kernel version and reports:
+
+- Whether `amneziawg-tools` is available
+- Whether `kmod-amneziawg` is available (the critical piece)
+- The exact package version that would be installed
+
+If `kmod-amneziawg` is not found, the command says so clearly rather than letting `apk add` fail silently mid-install. In that case you'll need to compile the module from source (see [Slava-Shchipunov/awg-openwrt](https://github.com/Slava-Shchipunov/awg-openwrt)).
+
+**Router availability (as of May 2026):** `amneziawg-tools` pre-built `.apk` packages exist for most architectures. However **`kmod-amneziawg` is not available** for `mediatek/mt7622` (and several other targets) — must be compiled from source against the exact kernel version. Without the kernel module, the tools do nothing. Standard WireGuard without AmneziaWG obfuscation: handshake sometimes passes, but ТСПУ kills the data channel within seconds.
 
 Self-hosted on a $3 VPS. Setup via their desktop app (which generates server-side config and client URIs).
 
