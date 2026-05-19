@@ -14,6 +14,22 @@ from .router import Router
 log = get_logger("wireguard")
 
 
+def _parse_rtt(stdout: str) -> float | None:
+    """Extract the average RTT from BusyBox ping output.
+
+    Looks for a line like:
+        round-trip min/avg/max = 78.234/79.012/80.456 ms
+    Returns the avg value rounded to 1 decimal place, or None if not found.
+    """
+    m = re.search(r"min/avg/max\s*=\s*[\d.]+/([\d.]+)/[\d.]+", stdout)
+    if m:
+        try:
+            return round(float(m.group(1)), 1)
+        except ValueError:
+            pass
+    return None
+
+
 def _probe_sort_key(path: Path) -> tuple[int, str]:
     """Sort key that puts ROUTERS-tagged files first, then alphabetical."""
     name = path.stem.upper()
@@ -137,6 +153,7 @@ def probe(
     peers: list[tuple[str, WgPeer]],
     *,
     handshake_timeout: int = 30,
+    on_result=None,  # callable(dict) or None
 ) -> tuple[str, WgPeer] | None:
     """Cycle through (name, WgPeer) candidates, return the first that passes.
 
@@ -159,6 +176,8 @@ def probe(
                 and "0 received" not in res.stdout
                 and "0 packets received" not in res.stdout
             )
+            if on_result is not None:
+                on_result({"name": name, "status": "ok" if data_ok else "dead", "rtt": _parse_rtt(res.stdout)})
             if data_ok:
                 log.info(f"  *** {name} WORKS — data channel alive ***")
                 return name, peer

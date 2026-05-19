@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import sys
 from pathlib import Path
@@ -96,8 +97,22 @@ def cmd_wg_probe(args) -> tuple[dict, str]:
     if not files:
         raise FileNotFoundError(f"No .conf files in {args.dir}")
     peers = [(p.stem, wireguard.WgPeer.from_file(p)) for p in files]
+
+    if getattr(args, "stream", False):
+        def _on_result(data: dict) -> None:
+            sys.stdout.write(json.dumps(data) + "\n")
+            sys.stdout.flush()
+        on_result = _on_result
+    else:
+        on_result = None
+
     with Router(cfg) as r:
-        winner = wireguard.probe(r, cfg, peers)
+        winner = wireguard.probe(r, cfg, peers, on_result=on_result)
+
+    if getattr(args, "stream", False):
+        sys.stdout.write(json.dumps({"done": True, "winner": winner[0] if winner else None}) + "\n")
+        sys.stdout.flush()
+
     if winner:
         return (
             {"winner": winner[0], "candidates": [p[0] for p in peers]},
@@ -295,6 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     sw.add_parser("show", help="wg show").set_defaults(func=cmd_wg_show)
     a = sw.add_parser("probe", help="Try each .conf in dir, return first that survives DPI")
     a.add_argument("--dir", required=True)
+    a.add_argument("--stream", action="store_true", help="Emit NDJSON per endpoint as it finishes (for SSE streaming)")
     a.set_defaults(func=cmd_wg_probe)
     a = sw.add_parser("warp", help="Register Cloudflare WARP via wgcf and apply as VPN interface")
     a.add_argument(
