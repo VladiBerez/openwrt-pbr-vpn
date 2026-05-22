@@ -1,7 +1,7 @@
 # Starter list of domains. Copy to ./domains.txt and add/remove as needed.
 # Resolved through Google + Cloudflare DoH; A records get added to the PBR set.
 
-# === Meta / Instagram / Facebook / Threads ===
+# === Meta / Instagram / Facebook / Threads / WhatsApp ===
 www.instagram.com
 instagram.com
 i.instagram.com
@@ -14,6 +14,14 @@ graph.facebook.com
 m.facebook.com
 www.threads.net
 threads.net
+whatsapp.com
+www.whatsapp.com
+web.whatsapp.com
+static.whatsapp.net
+media.whatsapp.net
+mmg.whatsapp.net
+upload.whatsapp.net
+v.whatsapp.net
 
 # === Twitter / X ===
 twitter.com
